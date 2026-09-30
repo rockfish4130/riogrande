@@ -3,178 +3,289 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Castolon Flow 2016 vs 2026</title>
+<title>Castolon Flow by Year</title>
 <style>
 :root{
   color-scheme:light;
   --bg:#f6f5f2; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8984;
-  --grid:#e6e5e0; --axis:#c9c8c2;
-  --s2026:#2a78d6; --s2016:#eb6834;
-  --trip:rgba(27,175,122,.16); --tripEdge:#1baf7a;
+  --grid:#e6e5e0; --axis:#c9c8c2; --chip:#efeee9;
+  --trip:rgba(82,81,78,.10); --tripEdge:#8a8984;
+  --c1:#2a78d6; --c2:#eb6834; --c3:#1baf7a; --c4:#eda100; --c5:#e87ba4; --c6:#008300; --c7:#4a3aa7; --c8:#e34948;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     color-scheme:dark;
     --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --muted:#8f8e86;
-    --grid:#2c2c2a; --axis:#44433f;
-    --s2026:#3987e5; --s2016:#d95926;
-    --trip:rgba(25,158,112,.22); --tripEdge:#199e70;
+    --grid:#2c2c2a; --axis:#44433f; --chip:#262624;
+    --trip:rgba(195,194,183,.10); --tripEdge:#8f8e86;
+    --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#c98500; --c5:#d55181; --c6:#008300; --c7:#9085e9; --c8:#e66767;
   }
 }
 :root[data-theme="dark"]{
   color-scheme:dark;
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --muted:#8f8e86;
-  --grid:#2c2c2a; --axis:#44433f;
-  --s2026:#3987e5; --s2016:#d95926;
-  --trip:rgba(25,158,112,.22); --tripEdge:#199e70;
+  --grid:#2c2c2a; --axis:#44433f; --chip:#262624;
+  --trip:rgba(195,194,183,.10); --tripEdge:#8f8e86;
+  --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#c98500; --c5:#d55181; --c6:#008300; --c7:#9085e9; --c8:#e66767;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
 .wrap{max-width:1100px;margin:0 auto;padding:24px 16px 40px}
 h1{font-size:20px;margin:0 0 4px;font-weight:650}
 .sub{color:var(--ink2);margin:0 0 16px}
-.card{background:var(--surface);border:1px solid var(--grid);border-radius:12px;padding:16px 12px 8px}
-.legend{display:flex;flex-wrap:wrap;gap:16px;margin:0 4px 8px;color:var(--ink2);font-size:13px}
+.card{background:var(--surface);border:1px solid var(--grid);border-radius:12px;padding:14px 12px 8px}
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 4px 10px}
+.controls .lab{color:var(--ink2);font-size:13px;margin-right:4px}
+.chip{font:inherit;font-size:13px;font-variant-numeric:tabular-nums;border:1px solid var(--grid);background:var(--chip);color:var(--ink2);border-radius:999px;padding:3px 10px 3px 8px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.chip i{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--axis);display:inline-block}
+.chip[aria-pressed="true"]{background:var(--surface);color:var(--ink);border-color:var(--axis);font-weight:600}
+.chip[aria-pressed="true"] i{border-color:transparent}
+.chip:disabled{opacity:.4;cursor:not-allowed}
+.btn{font:inherit;font-size:12px;background:none;border:none;color:var(--ink2);text-decoration:underline;cursor:pointer;padding:2px 4px}
+.opts{display:flex;flex-wrap:wrap;gap:16px;margin:0 4px 8px;color:var(--ink2);font-size:13px;align-items:center}
+.opts label{display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin:0 4px 6px;color:var(--ink2);font-size:13px}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .sw{width:18px;height:3px;border-radius:2px;display:inline-block}
-.sw.band{height:10px;opacity:.35}
-.sw.trip{height:12px;width:14px;background:var(--trip);border:1px solid var(--tripEdge);border-radius:2px}
+.sw.trip{height:12px;width:14px;background:var(--trip);border:1px dashed var(--tripEdge);border-radius:2px}
 svg{display:block;width:100%;height:auto;overflow:visible}
 .tick{fill:var(--muted);font-size:11px}
-.dlabel{font-size:12px;font-weight:600;fill:var(--ink)}
-.tip{position:fixed;pointer-events:none;background:var(--surface);border:1px solid var(--axis);border-radius:8px;padding:8px 10px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.15);display:none;min-width:190px;z-index:5}
+.dlabel{font-size:12px;font-weight:600;fill:var(--ink);paint-order:stroke;stroke:var(--surface);stroke-width:3px}
+.alabel{font-size:11px;fill:var(--ink2);paint-order:stroke;stroke:var(--surface);stroke-width:3px}
+.tip{position:fixed;pointer-events:none;background:var(--surface);border:1px solid var(--axis);border-radius:8px;padding:8px 10px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.15);display:none;min-width:180px;z-index:5}
 .tip b{font-size:13px}
-.tip .row{display:flex;justify-content:space-between;gap:12px;margin-top:4px}
+.tip .row{display:flex;justify-content:space-between;gap:12px;margin-top:3px}
 .tip .k{display:inline-flex;align-items:center;gap:6px;color:var(--ink2)}
 .tip .v{font-variant-numeric:tabular-nums}
-.notes{color:var(--ink2);font-size:13px;margin-top:14px}
+.tip .rng{color:var(--muted);font-size:11px}
+.plot{overflow-x:auto}
+.plot svg{min-width:720px}
+h2{font-size:15px;margin:22px 0 6px;font-weight:650}
+table{border-collapse:collapse;font-size:12px;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:4px 8px;border-bottom:1px solid var(--grid);text-align:right;white-space:nowrap}
+th{color:var(--ink2);font-weight:600}
+th:first-child,td:first-child{text-align:left}
+td .sw{margin-right:6px;vertical-align:middle}
+.scroll{overflow-x:auto}
+tr.trip td{background:var(--trip)}
+.tablewrap{max-height:420px;overflow:auto;margin-top:8px}
+.notes{color:var(--ink2);font-size:13px;margin-top:14px;padding-left:20px}
 .notes li{margin:3px 0}
 details{margin-top:16px;color:var(--ink2)}
 summary{cursor:pointer}
-table{border-collapse:collapse;font-size:12px;margin-top:8px;width:100%;font-variant-numeric:tabular-nums}
-th,td{padding:3px 8px;border-bottom:1px solid var(--grid);text-align:right}
-th:first-child,td:first-child{text-align:left}
-tr.trip td{background:var(--trip)}
-.tablewrap{max-height:420px;overflow:auto}
-.plot{overflow-x:auto}
-.plot svg{min-width:640px}
 .src{color:var(--muted);font-size:12px;margin-top:18px}
 .src a{color:var(--ink2)}
+.status{color:var(--muted);font-size:12px;margin:0 4px 6px;min-height:1em}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Rio Grande near Castolon: 2026 vs 2016</h1>
-  <p class="sub">USGS 08374550 · daily flow in cfs (log scale), June 1 – November 30 · lines show the daily mean, shading the daily min–max range</p>
+  <h1>Rio Grande near Castolon: daily flow by year</h1>
+  <p class="sub">USGS 08374550 · daily mean flow in cfs (log scale), Jan 1 – Dec 31 · pick years to overlay (up to 8)</p>
   <div class="card">
-    <div class="legend">
-      <span><i class="sw" style="background:var(--s2026)"></i>2026 (through Sep 29)</span>
-      <span><i class="sw" style="background:var(--s2016)"></i>2016</span>
-      <span><i class="sw band" style="background:var(--ink2)"></i>Daily min–max</span>
-      <span><i class="sw trip"></i>Your trip, Nov 12–18, 2016</span>
+    <div class="controls" id="years"><span class="lab">Years</span></div>
+    <div class="opts">
+      <label><input type="checkbox" id="optRange"> Daily min–max shading</label>
+      <label><input type="checkbox" id="optPeaks" checked> Peak callouts</label>
+      <button class="btn" id="clearBtn" type="button">Clear</button>
+      <button class="btn" id="resetBtn" type="button">Reset to latest + 2016</button>
     </div>
-    <div class="plot"><svg id="chart" viewBox="0 0 1000 460" role="img" aria-label="Daily discharge at Castolon, 2026 versus 2016"></svg></div>
+    <div class="legend" id="legend"></div>
+    <div class="status" id="status">Loading…</div>
+    <div class="plot"><svg id="chart" viewBox="0 0 1000 460" role="img" aria-label="Daily discharge at Castolon for the selected years"></svg></div>
   </div>
+
+  <h2>Selected years</h2>
+  <div class="scroll"><table id="summary"></table></div>
+
   <ul class="notes">
-    <li><b>Your trip (Nov 12–18, 2016):</b> daily mean 286 → 209 cfs, steady and falling. A 14,600 cfs flash peak came through on Nov 4.</li>
-    <li><b>2016</b> had a wet late summer. Late August hit 25,200 cfs, and baseflow stayed around 550–800 cfs through the fall.</li>
-    <li><b>2026</b> mostly sits at 1–10 cfs between storm spikes, and the gauge read <b>0 cfs from Aug 31 to Sep 3</b>. The Sep 25 peak was 15,200 cfs.</li>
-    <li>On the log scale, zero readings are drawn at 1 cfs. All data are provisional USGS values; 2016 has a few days with only a daily mean.</li>
+    <li><b>Your trip (Nov 12–18, 2016):</b> daily mean fell from 286 to 209 cfs. A 14,600 cfs flash peak came through on Nov 4. The dashed band marks the trip whenever 2016 is shown.</li>
+    <li>Peaks in the table are the highest daily <i>max</i> (close to the instantaneous peak). Zero readings are drawn at 1 cfs on the log scale.</li>
+    <li>Recent values are provisional. Data refresh automatically every morning.</li>
   </ul>
   <details>
-    <summary>Data table</summary>
+    <summary>Daily data table</summary>
     <div class="tablewrap"><table id="tbl"></table></div>
   </details>
-  <p class="src">Data: <a href="https://waterdata.usgs.gov/monitoring-location/USGS-08374550/">USGS 08374550, Rio Grande nr Castolon, TX</a> · retrieved Sep 30, 2026</p>
+  <p class="src">Data: <a href="https://waterdata.usgs.gov/monitoring-location/USGS-08374550/">USGS 08374550, Rio Grande nr Castolon, TX</a> · <span id="updated"></span> · <a href="https://github.com/rockfish4130/riogrande">source</a></p>
 </div>
 <div class="tip" id="tip"></div>
 <script>
-const DATA = {"y2016":[["06-01",1160.0,790.0,2220.0],["06-02",1330.0,367.0,3080.0],["06-03",691.0,392.0,1330.0],["06-04",270.0,152.0,463.0],["06-05",133.0,90.4,183.0],["06-06",108.0,81.8,178.0],["06-07",138.0,null,null],["06-08",136.0,null,null],["06-09",134.0,null,null],["06-10",132.0,null,null],["06-11",130.0,null,null],["06-12",128.0,null,null],["06-13",82.6,38.5,152.0],["06-14",90.7,39.7,453.0],["06-15",767.0,45.9,3720.0],["06-16",170.0,71.5,288.0],["06-17",133.0,52.3,260.0],["06-18",172.0,87.1,282.0],["06-19",70.3,40.9,106.0],["06-20",813.0,59.2,2900.0],["06-21",207.0,112.0,432.0],["06-22",160.0,null,null],["06-23",88.8,null,null],["06-24",60.9,null,null],["06-25",107.0,null,null],["06-26",215.0,99.1,496.0],["06-27",3030.0,142.0,11200.0],["06-28",1740.0,686.0,8010.0],["06-29",1210.0,432.0,3760.0],["06-30",447.0,218.0,873.0],["07-01",174.0,101.0,266.0],["07-02",131.0,80.0,190.0],["07-03",229.0,99.1,373.0],["07-04",260.0,174.0,367.0],["07-05",189.0,122.0,257.0],["07-06",138.0,81.8,218.0],["07-07",83.6,57.7,122.0],["07-08",70.2,53.6,103.0],["07-09",85.1,59.2,139.0],["07-10",73.4,51.0,112.0],["07-11",53.0,null,null],["07-12",46.0,null,null],["07-13",42.0,null,null],["07-14",34.8,null,null],["07-15",33.2,null,null],["07-16",143.0,null,null],["07-17",77.0,null,null],["07-18",54.3,null,null],["07-19",30.0,null,null],["07-20",21.9,null,null],["07-21",17.3,16.1,18.2],["07-22",15.3,14.2,16.8],["07-23",13.8,13.0,14.8],["07-24",12.6,11.9,13.6],["07-25",11.9,10.7,12.4],["07-26",11.2,10.1,12.4],["07-27",9.91,7.97,10.7],["07-28",8.67,7.97,8.99],["07-29",258.0,7.97,2880.0],["07-30",252.0,36.3,2030.0],["07-31",101.0,34.1,1460.0],["08-01",270.0,42.1,2190.0],["08-02",48.5,34.1,65.1],["08-03",73.3,38.5,223.0],["08-04",402.0,198.0,626.0],["08-05",128.0,87.1,200.0],["08-06",66.8,52.3,88.7],["08-07",47.7,44.6,53.6],["08-08",41.4,36.3,45.9],["08-09",241.0,35.2,1550.0],["08-10",178.0,47.2,597.0],["08-11",192.0,43.3,496.0],["08-12",479.0,49.7,1770.0],["08-13",1330.0,530.0,8010.0],["08-14",8130.0,2560.0,10800.0],["08-15",1020.0,425.0,2560.0],["08-16",270.0,161.0,442.0],["08-17",137.0,120.0,163.0],["08-18",732.0,101.0,4950.0],["08-19",3510.0,690.0,8090.0],["08-20",1710.0,810.0,3050.0],["08-21",907.0,389.0,1620.0],["08-22",510.0,213.0,1090.0],["08-23",182.0,150.0,229.0],["08-24",362.0,139.0,515.0],["08-25",435.0,251.0,776.0],["08-26",9100.0,299.0,25200.0],["08-27",11000.0,1920.0,18500.0],["08-28",2980.0,673.0,20100.0],["08-29",6380.0,1920.0,18600.0],["08-30",4670.0,2010.0,11600.0],["08-31",5620.0,1930.0,8970.0],["09-01",1620.0,1040.0,1990.0],["09-02",837.0,686.0,1060.0],["09-03",620.0,565.0,699.0],["09-04",649.0,561.0,762.0],["09-05",555.0,519.0,589.0],["09-06",1020.0,526.0,2070.0],["09-07",3040.0,1960.0,4150.0],["09-08",4230.0,3870.0,4470.0],["09-09",3980.0,3570.0,4340.0],["09-10",3520.0,3110.0,4050.0],["09-11",2780.0,2520.0,3250.0],["09-12",2550.0,2140.0,3910.0],["09-13",4350.0,2940.0,8200.0],["09-14",2320.0,1920.0,3030.0],["09-15",1770.0,1610.0,1980.0],["09-16",1470.0,1270.0,1650.0],["09-17",1240.0,1100.0,2060.0],["09-18",2460.0,1310.0,3870.0],["09-19",1060.0,919.0,1310.0],["09-20",913.0,844.0,977.0],["09-21",800.0,730.0,883.0],["09-22",713.0,677.0,758.0],["09-23",657.0,605.0,708.0],["09-24",599.0,561.0,622.0],["09-25",872.0,581.0,1760.0],["09-26",1310.0,993.0,1700.0],["09-27",1110.0,904.0,1380.0],["09-28",861.0,786.0,950.0],["09-29",791.0,753.0,839.0],["09-30",775.0,735.0,829.0],["10-01",755.0,694.0,829.0],["10-02",713.0,677.0,767.0],["10-03",716.0,655.0,772.0],["10-04",681.0,643.0,717.0],["10-05",630.0,581.0,681.0],["10-06",595.0,561.0,622.0],["10-07",551.0,522.0,585.0],["10-08",547.0,515.0,569.0],["10-09",568.0,542.0,593.0],["10-10",3870.0,585.0,5420.0],["10-11",1490.0,914.0,2620.0],["10-12",881.0,819.0,940.0],["10-13",802.0,735.0,878.0],["10-14",728.0,634.0,800.0],["10-15",618.0,569.0,677.0],["10-16",585.0,553.0,613.0],["10-17",594.0,553.0,622.0],["10-18",591.0,557.0,618.0],["10-19",648.0,565.0,708.0],["10-20",675.0,638.0,708.0],["10-21",662.0,630.0,717.0],["10-22",651.0,626.0,681.0],["10-23",655.0,618.0,690.0],["10-24",654.0,622.0,686.0],["10-25",648.0,605.0,681.0],["10-26",640.0,601.0,699.0],["10-27",645.0,601.0,686.0],["10-28",641.0,613.0,664.0],["10-29",609.0,569.0,660.0],["10-30",598.0,561.0,622.0],["10-31",619.0,585.0,655.0],["11-01",632.0,605.0,655.0],["11-02",639.0,609.0,668.0],["11-03",650.0,609.0,681.0],["11-04",3400.0,643.0,14600.0],["11-05",853.0,647.0,1050.0],["11-06",708.0,651.0,772.0],["11-07",583.0,471.0,699.0],["11-08",409.0,354.0,474.0],["11-09",322.0,285.0,354.0],["11-10",276.0,260.0,293.0],["11-11",270.0,251.0,348.0],["11-12",286.0,240.0,357.0],["11-13",250.0,223.0,280.0],["11-14",230.0,221.0,237.0],["11-15",224.0,218.0,234.0],["11-16",221.0,213.0,229.0],["11-17",217.0,205.0,226.0],["11-18",209.0,203.0,218.0],["11-19",195.0,188.0,205.0],["11-20",193.0,188.0,200.0],["11-21",190.0,186.0,195.0],["11-22",187.0,183.0,190.0],["11-23",184.0,174.0,190.0],["11-24",177.0,174.0,181.0],["11-25",177.0,174.0,181.0],["11-26",183.0,176.0,188.0],["11-27",181.0,178.0,186.0],["11-28",184.0,178.0,190.0],["11-29",186.0,178.0,190.0],["11-30",184.0,178.0,190.0]],"y2026":[["06-01",8.9,5.89,16.6],["06-02",373.0,5.33,6020.0],["06-03",1810.0,359.0,9320.0],["06-04",243.0,143.0,373.0],["06-05",371.0,137.0,523.0],["06-06",198.0,136.0,271.0],["06-07",95.3,62.9,136.0],["06-08",45.1,28.4,62.9],["06-09",20.7,14.1,28.4],["06-10",12.1,9.93,14.1],["06-11",9.36,8.87,10.5],["06-12",51.0,8.46,778.0],["06-13",1550.0,759.0,2190.0],["06-14",582.0,291.0,1080.0],["06-15",213.0,75.2,394.0],["06-16",521.0,70.7,813.0],["06-17",425.0,216.0,747.0],["06-18",128.0,72.1,216.0],["06-19",52.4,30.2,74.4],["06-20",21.3,13.7,30.2],["06-21",11.0,9.03,13.7],["06-22",8.52,7.93,9.17],["06-23",7.63,7.12,7.94],["06-24",6.8,6.17,7.14],["06-25",6.03,5.5,6.33],["06-26",5.43,5.1,5.67],["06-27",4.95,4.7,5.26],["06-28",4.33,3.9,4.72],["06-29",138.0,3.91,435.0],["06-30",396.0,27.8,1360.0],["07-01",1430.0,344.0,5730.0],["07-02",1900.0,387.0,5480.0],["07-03",404.0,283.0,726.0],["07-04",146.0,75.2,283.0],["07-05",42.3,25.7,75.2],["07-06",43.4,9.68,318.0],["07-07",8.98,8.04,10.8],["07-08",8.34,7.84,8.96],["07-09",7.87,7.03,9.11],["07-10",6.89,6.22,7.74],["07-11",7.03,6.37,7.8],["07-12",84.7,5.86,1520.0],["07-13",586.0,235.0,1550.0],["07-14",1920.0,281.0,7660.0],["07-15",1860.0,930.0,4180.0],["07-16",453.0,253.0,930.0],["07-17",2190.0,355.0,7490.0],["07-18",775.0,359.0,2210.0],["07-19",1050.0,312.0,3000.0],["07-20",4490.0,402.0,15900.0],["07-21",1240.0,625.0,2700.0],["07-22",636.0,427.0,875.0],["07-23",290.0,172.0,510.0],["07-24",98.5,63.7,172.0],["07-25",51.6,29.8,77.7],["07-26",21.4,15.6,31.0],["07-27",12.4,9.4,15.6],["07-28",8.86,8.3,9.91],["07-29",7.87,7.49,8.44],["07-30",7.2,6.95,7.63],["07-31",6.66,6.42,6.96],["08-01",6.17,5.75,6.57],["08-02",5.7,5.36,5.91],["08-03",5.33,5.11,5.52],["08-04",4.98,4.72,5.12],["08-05",4.64,4.33,4.87],["08-06",4.51,4.2,4.77],["08-07",4.11,3.92,4.2],["08-08",5.79,4.06,8.27],["08-09",3.77,3.22,4.34],["08-10",4.96,3.22,7.15],["08-11",3.76,3.22,4.48],["08-12",3.05,2.8,3.36],["08-13",2.67,2.38,2.8],["08-14",44.0,2.24,212.0],["08-15",1450.0,7.57,4190.0],["08-16",128.0,34.5,349.0],["08-17",17.7,8.13,39.3],["08-18",6.66,5.47,8.27],["08-19",6.97,6.03,7.71],["08-20",4.69,3.64,6.03],["08-21",3.62,3.22,4.91],["08-22",4.75,4.2,5.05],["08-23",4.01,3.64,4.2],["08-24",3.26,3.08,3.64],["08-25",2.74,2.24,3.08],["08-26",2.12,1.68,2.38],["08-27",1.69,1.26,1.82],["08-28",1.36,1.12,1.54],["08-29",0.76,0.14,1.12],["08-30",0.02,0.0,0.28],["08-31",0.0,0.0,0.0],["09-01",0.0,0.0,0.0],["09-02",0.0,0.0,0.0],["09-03",0.0,0.0,0.0],["09-04",2.12,0.0,31.6],["09-05",112.0,1.4,1020.0],["09-06",90.1,9.11,304.0],["09-07",7.72,5.89,9.9],["09-08",7.75,6.73,8.83],["09-09",5.96,5.19,6.73],["09-10",4.78,4.2,5.33],["09-11",3.73,3.36,4.2],["09-12",3.15,2.8,3.36],["09-13",2.45,1.82,2.94],["09-14",1.53,0.84,1.82],["09-15",1.22,0.42,1.82],["09-16",1.13,0.42,1.54],["09-17",75.6,0.0,227.0],["09-18",105.0,66.1,186.0],["09-19",45.0,27.6,68.2],["09-20",57.2,21.0,138.0],["09-21",228.0,18.3,371.0],["09-22",80.9,31.6,167.0],["09-23",68.6,31.6,89.8],["09-24",95.6,26.4,5670.0],["09-25",4180.0,337.0,15200.0],["09-26",270.0,217.0,371.0],["09-27",157.0,117.0,219.0],["09-28",73.2,39.3,121.0],["09-29",32.1,25.3,42.9]]};
-const W=1000,H=460,m={l:58,r:20,t:16,b:40};
+(async function(){
+const MAX_SEL=8, TRIP_YEAR=2016, TRIP=["11-12","11-18"];
+const W=1000,H=460,m={l:58,r:44,t:16,b:40};
 const pw=W-m.l-m.r, ph=H-m.t-m.b;
-// x = day index from Jun 1 (183 days Jun1..Nov30)
-const MONTHS=[["06",30,"Jun"],["07",31,"Jul"],["08",31,"Aug"],["09",30,"Sep"],["10",31,"Oct"],["11",30,"Nov"]];
-const off={};let acc=0;MONTHS.forEach(([k,n])=>{off[k]=acc;acc+=n});
-const N=acc; // 183
-const di=md=>off[md.slice(0,2)]+ (+md.slice(3))-1;
-const x=i=>m.l+ (i/(N-1))*pw;
-const yMin=1,yMax=30000;
+const MONTHS=[["01",31,"Jan"],["02",29,"Feb"],["03",31,"Mar"],["04",30,"Apr"],["05",31,"May"],["06",30,"Jun"],["07",31,"Jul"],["08",31,"Aug"],["09",30,"Sep"],["10",31,"Oct"],["11",30,"Nov"],["12",31,"Dec"]];
+const off={},mname={};let acc=0;MONTHS.forEach(([k,n,nm])=>{off[k]=acc;acc+=n;mname[k]=nm});
+const N=acc; // 366, leap-year slots so Feb 29 has a place
+const keys=[];MONTHS.forEach(([k,n])=>{for(let d=1;d<=n;d++)keys.push(k+'-'+String(d).padStart(2,'0'))});
+const di=md=>off[md.slice(0,2)]+(+md.slice(3))-1;
+const x=i=>m.l+(i/(N-1))*pw;
+const yMin=1;let yMax=30000;
 const L=v=>Math.log10(Math.max(v,yMin));
 const y=v=>m.t+ph-(L(v)-L(yMin))/(L(yMax)-L(yMin))*ph;
-const svg=document.getElementById('chart');
-const NS='http://www.w3.org/2000/svg';
+const svg=document.getElementById('chart'), NS='http://www.w3.org/2000/svg';
 const el=(t,a,p=svg)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);p.appendChild(e);return e};
-// trip band
-const t0=di("11-12"),t1=di("11-18");
-el('rect',{x:x(t0)-pw/(N-1)/2,y:m.t,width:x(t1)-x(t0)+pw/(N-1),height:ph,fill:'var(--trip)',stroke:'var(--tripEdge)','stroke-width':1});
-const tl=el('text',{x:(x(t0)+x(t1))/2,y:m.t+ph-8,'text-anchor':'middle',class:'dlabel'});tl.textContent='Trip';
-// grid
-[1,10,100,1000,10000].forEach(v=>{
-  el('line',{x1:m.l,x2:m.l+pw,y1:y(v),y2:y(v),stroke:'var(--grid)','stroke-width':1});
-  const t=el('text',{x:m.l-8,y:y(v)+4,'text-anchor':'end',class:'tick'});t.textContent=v>=1000?(v/1000)+'k':v;
-});
-[3,30,300,3000,30000].forEach(v=>{ if(v<=yMax) el('line',{x1:m.l,x2:m.l+pw,y1:y(v),y2:y(v),stroke:'var(--grid)','stroke-width':1,'stroke-dasharray':'2 4'}); });
-const yl=el('text',{x:14,y:m.t+ph/2,transform:`rotate(-90 14 ${m.t+ph/2})`,'text-anchor':'middle',class:'tick'});yl.textContent='cfs (log)';
-// x axis
-el('line',{x1:m.l,x2:m.l+pw,y1:m.t+ph,y2:m.t+ph,stroke:'var(--axis)'});
-MONTHS.forEach(([k,n,name])=>{const i=off[k];
-  el('line',{x1:x(i),x2:x(i),y1:m.t,y2:m.t+ph,stroke:'var(--grid)'});
-  const t=el('text',{x:x(i)+4,y:m.t+ph+18,class:'tick'});t.textContent=name+' 1';});
-// series
-function draw(rows,color,label){
-  // band
-  let up=[],dn=[];
-  rows.forEach(r=>{const i=di(r[0]);const hi=r[3]??r[1],lo=r[2]??r[1];up.push([x(i),y(hi)]);dn.push([x(i),y(lo)])});
-  const pts=up.concat(dn.reverse()).map(p=>p.join(',')).join(' ');
-  el('polygon',{points:pts,fill:color,'fill-opacity':.14,stroke:'none'});
-  el('polyline',{points:rows.map(r=>x(di(r[0]))+','+y(r[1])).join(' '),fill:'none',stroke:color,'stroke-width':2,'stroke-linejoin':'round'});
-}
-draw(DATA.y2016,'var(--s2016)');
-draw(DATA.y2026,'var(--s2026)');
-// direct labels
-const last26=DATA.y2026[DATA.y2026.length-1];
-let t=el('text',{x:x(di(last26[0]))+6,y:y(last26[1])+4,class:'dlabel'});t.textContent='2026';
-const r16=DATA.y2016[DATA.y2016.length-1];
-t=el('text',{x:x(di(r16[0]))-4,y:y(r16[1])-10,'text-anchor':'end',class:'dlabel'});t.textContent='2016';
-// peak annotations
-function ann(md,v,txt,dy,left){const i=di(md);el('circle',{cx:x(i),cy:y(v),r:3.5,fill:'var(--surface)',stroke:'var(--ink2)','stroke-width':1.5});
-  const a=el('text',{x:x(i)+(left?-7:6),y:y(v)+dy,class:'tick','text-anchor':left?'end':'start'});a.textContent=txt;}
-ann("08-26",25200,"25,200 (2016)",4);
-ann("09-25",15200,"15,200 (Sep 25)",4);
-ann("11-04",14600,"14,600 (Nov 4, 2016)",18,true);
-// hover
-const cross=el('line',{y1:m.t,y2:m.t+ph,stroke:'var(--ink2)','stroke-width':1,visibility:'hidden'});
-const d26=el('circle',{r:4.5,fill:'var(--s2026)',stroke:'var(--surface)','stroke-width':2,visibility:'hidden'});
-const d16=el('circle',{r:4.5,fill:'var(--s2016)',stroke:'var(--surface)','stroke-width':2,visibility:'hidden'});
-const hit=el('rect',{x:m.l,y:m.t,width:pw,height:ph,fill:'transparent'});
-const tip=document.getElementById('tip');
-const by=(rows)=>{const o={};rows.forEach(r=>o[r[0]]=r);return o};
-const M26=by(DATA.y2026),M16=by(DATA.y2016);
-const keys=[];MONTHS.forEach(([k,n])=>{for(let d=1;d<=n;d++)keys.push(k+'-'+String(d).padStart(2,'0'))});
-const fmt=v=>v==null?'—':(v>=100?Math.round(v).toLocaleString():(+v).toString());
-const mname={"06":"Jun","07":"Jul","08":"Aug","09":"Sep","10":"Oct","11":"Nov"};
-function move(ev){
-  const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());
-  let i=Math.round((p.x-m.l)/pw*(N-1));i=Math.max(0,Math.min(N-1,i));const k=keys[i];
-  cross.setAttribute('x1',x(i));cross.setAttribute('x2',x(i));cross.setAttribute('visibility','visible');
-  const a=M26[k],b=M16[k];
-  if(a){d26.setAttribute('cx',x(i));d26.setAttribute('cy',y(a[1]));d26.setAttribute('visibility','visible')}else d26.setAttribute('visibility','hidden');
-  if(b){d16.setAttribute('cx',x(i));d16.setAttribute('cy',y(b[1]));d16.setAttribute('visibility','visible')}else d16.setAttribute('visibility','hidden');
-  const row=(c,lab,r)=>`<div class="row"><span class="k"><i class="sw" style="background:${c}"></i>${lab}</span><span class="v">${r?fmt(r[1])+' cfs':'—'}</span></div>`+(r&&r[3]!=null?`<div class="row" style="margin-top:0"><span class="k" style="padding-left:24px">range</span><span class="v">${fmt(r[2])}–${fmt(r[3])}</span></div>`:'');
-  const trip=(i>=t0&&i<=t1)?' · <span style="color:var(--tripEdge)">on the river</span>':'';
-  tip.innerHTML=`<b>${mname[k.slice(0,2)]} ${+k.slice(3)}</b>${trip}`+row('var(--s2026)','2026',a)+row('var(--s2016)','2016',b);
-  tip.style.display='block';
-  const tw=tip.offsetWidth,th=tip.offsetHeight;let lx=ev.clientX+14,ly=ev.clientY-th-10;
-  if(lx+tw>innerWidth-8)lx=ev.clientX-tw-14; if(ly<8)ly=ev.clientY+14;
-  tip.style.left=lx+'px';tip.style.top=ly+'px';
-}
-function leave(){tip.style.display='none';[cross,d26,d16].forEach(e=>e.setAttribute('visibility','hidden'))}
-hit.addEventListener('pointermove',move);hit.addEventListener('pointerdown',move);hit.addEventListener('pointerleave',leave);
-// table
-let h='<tr><th>Date</th><th>2026 mean</th><th>2026 max</th><th>2016 mean</th><th>2016 max</th></tr>';
-keys.forEach((k,i)=>{const a=M26[k],b=M16[k];h+=`<tr${(i>=t0&&i<=t1)?' class="trip"':''}><td>${mname[k.slice(0,2)]} ${+k.slice(3)}</td><td>${a?fmt(a[1]):''}</td><td>${a?fmt(a[3]):''}</td><td>${b?fmt(b[1]):''}</td><td>${b?fmt(b[3]):''}</td></tr>`});
-document.getElementById('tbl').innerHTML=h;
-</script>
+const fmt=v=>v==null?'—':(v>=100?Math.round(v).toLocaleString():String(+(+v).toFixed(2)));
+const lbl=md=>mname[md.slice(0,2)]+' '+(+md.slice(3));
+const $=id=>document.getElementById(id);
+const status=$('status');
 
+// ---- data ----
+let index;
+try{ index=await (await fetch('data/index.json',{cache:'no-cache'})).json(); }
+catch(e){ status.textContent='Could not load data/index.json.'; return; }
+const YEARS=index.years.slice().sort((a,b)=>a-b);
+const LATEST=YEARS[YEARS.length-1];
+$('updated').textContent='through '+index.through+(index.updated?' · updated '+index.updated.slice(0,10):'');
+const cache={};
+async function load(yr){
+  if(!cache[yr]) cache[yr]=fetch(`data/${yr}.json`,{cache:'no-cache'}).then(r=>r.json()).then(d=>{const map={};d.rows.forEach(r=>map[r[0]]=r);return {rows:d.rows,map}});
+  return cache[yr];
+}
+
+// ---- selection state: color follows the year, not its position ----
+const slot={}; // year -> 1..8
+let sel=[];
+function parseHash(){const mm=location.hash.match(/years=([\d,]+)/);return mm?mm[1].split(',').map(Number).filter(v=>YEARS.includes(v)):null}
+function defaults(){return [LATEST,TRIP_YEAR].filter((v,i,a)=>YEARS.includes(v)&&a.indexOf(v)===i)}
+function setSel(list){
+  sel=[...new Set(list)].slice(0,MAX_SEL);
+  Object.keys(slot).forEach(k=>{if(!sel.includes(+k))delete slot[k]});
+  sel.forEach(yr=>{if(!slot[yr]){for(let s=1;s<=MAX_SEL;s++){if(!Object.values(slot).includes(s)){slot[yr]=s;break}}}});
+  history.replaceState(null,'',sel.length?'#years='+sel.join(','):location.pathname+location.search);
+  render();
+}
+const color=yr=>`var(--c${slot[yr]})`;
+
+// year chips
+const yc=$('years');
+const chips={};
+YEARS.forEach(yr=>{
+  const b=document.createElement('button');b.type='button';b.className='chip';b.innerHTML=`<i></i>${yr}`;
+  b.onclick=()=>setSel(sel.includes(yr)?sel.filter(v=>v!==yr):sel.concat(yr));
+  yc.appendChild(b);chips[yr]=b;
+});
+$('clearBtn').onclick=()=>setSel([]);
+$('resetBtn').onclick=()=>setSel(defaults());
+$('optRange').onchange=render;$('optPeaks').onchange=render;
+window.addEventListener('hashchange',()=>{const h=parseHash();if(h)setSel(h)});
+
+// ---- chart ----
+let seq=0;
+async function render(){
+  const my=++seq;
+  YEARS.forEach(yr=>{const on=sel.includes(yr);const c=chips[yr];c.setAttribute('aria-pressed',on);c.querySelector('i').style.background=on?color(yr):'transparent';c.disabled=!on&&sel.length>=MAX_SEL});
+  status.textContent=sel.length?'':'Pick one or more years above.';
+  const data={};
+  await Promise.all(sel.map(async yr=>{data[yr]=await load(yr)}));
+  if(my!==seq)return;
+  draw(data);tables(data);
+}
+
+function draw(data){
+  svg.innerHTML='';
+  const showRange=$('optRange').checked, showPeaks=$('optPeaks').checked;
+  // y extent: 30k unless a selected year exceeds it
+  let hi=0;sel.forEach(yr=>data[yr].rows.forEach(r=>{hi=Math.max(hi,(showRange&&r[3]!=null?r[3]:r[1]))}));
+  if(showPeaks)sel.forEach(yr=>data[yr].rows.forEach(r=>{if(r[3]!=null)hi=Math.max(hi,r[3])}));
+  yMax=hi>30000?100000:30000;
+  // trip band
+  const t0=di(TRIP[0]),t1=di(TRIP[1]),step=pw/(N-1);
+  if(sel.includes(TRIP_YEAR)){
+    el('rect',{x:x(t0)-step/2,y:m.t,width:x(t1)-x(t0)+step,height:ph,fill:'var(--trip)',stroke:'var(--tripEdge)','stroke-width':1,'stroke-dasharray':'3 3'});
+    const t=el('text',{x:(x(t0)+x(t1))/2,y:m.t+ph-8,'text-anchor':'middle',class:'alabel'});t.textContent='Trip';
+  }
+  // grid + y ticks
+  const decades=[1,10,100,1000,10000,100000].filter(v=>v<=yMax);
+  decades.forEach(v=>{
+    el('line',{x1:m.l,x2:m.l+pw,y1:y(v),y2:y(v),stroke:'var(--grid)','stroke-width':1});
+    const t=el('text',{x:m.l-8,y:y(v)+4,'text-anchor':'end',class:'tick'});t.textContent=v>=1000?(v/1000)+'k':v;
+  });
+  decades.map(v=>v*3).filter(v=>v<=yMax).forEach(v=>el('line',{x1:m.l,x2:m.l+pw,y1:y(v),y2:y(v),stroke:'var(--grid)','stroke-width':1,'stroke-dasharray':'2 4'}));
+  const yl=el('text',{x:14,y:m.t+ph/2,transform:`rotate(-90 14 ${m.t+ph/2})`,'text-anchor':'middle',class:'tick'});yl.textContent='cfs (log)';
+  // x axis
+  el('line',{x1:m.l,x2:m.l+pw,y1:m.t+ph,y2:m.t+ph,stroke:'var(--axis)'});
+  MONTHS.forEach(([k,,name])=>{const i=off[k];
+    el('line',{x1:x(i),x2:x(i),y1:m.t,y2:m.t+ph,stroke:'var(--grid)'});
+    const t=el('text',{x:x(i)+4,y:m.t+ph+18,class:'tick'});t.textContent=name;});
+  // series: split into runs so gaps in the record stay gaps
+  const runs=rows=>{const out=[];let cur=[],prev=-9;rows.forEach(r=>{const i=di(r[0]);if(i-prev>2&&cur.length){out.push(cur);cur=[]}cur.push(r);prev=i});if(cur.length)out.push(cur);return out};
+  sel.forEach(yr=>{
+    const c=color(yr);
+    runs(data[yr].rows).forEach(run=>{
+      if(showRange){
+        const up=run.map(r=>[x(di(r[0])),y(r[3]??r[1])]),dn=run.map(r=>[x(di(r[0])),y(r[2]??r[1])]).reverse();
+        el('polygon',{points:up.concat(dn).map(p=>p.join(',')).join(' '),fill:c,'fill-opacity':.14,stroke:'none'});
+      }
+      el('polyline',{points:run.map(r=>x(di(r[0]))+','+y(r[1])).join(' '),fill:'none',stroke:c,'stroke-width':sel.length>4?1.5:2,'stroke-linejoin':'round','stroke-opacity':sel.length>4?.85:1});
+    });
+  });
+  // peak callouts + direct labels (only when readable)
+  if(showPeaks&&sel.length<=4){
+    sel.forEach(yr=>{
+      const pk=peak(data[yr].rows);if(!pk)return;const i=di(pk.md),v=pk.v;
+      el('circle',{cx:x(i),cy:y(v),r:4,fill:'var(--surface)',stroke:color(yr),'stroke-width':2});
+      const left=i>N*0.8;
+      const a=el('text',{x:x(i)+(left?-8:7),y:y(v)+4,class:'alabel','text-anchor':left?'end':'start'});
+      a.textContent=`${fmt(v)} (${lbl(pk.md)}, ${yr})`;
+    });
+  }
+  if(sel.length<=4){
+    sel.forEach(yr=>{const rows=data[yr].rows,r=rows[rows.length-1];const i=di(r[0]);
+      const endOfYear=i>=N-3;
+      const t=el('text',{x:endOfYear?m.l+pw+4:x(i)+6,y:y(r[1])+4,class:'dlabel'});t.textContent=yr;t.style.fill=color(yr);
+    });
+  }
+  // legend
+  $('legend').innerHTML=sel.slice().sort().map(yr=>{const rows=data[yr].rows,last=rows[rows.length-1][0];
+    return `<span><i class="sw" style="background:${color(yr)}"></i>${yr}${last!=='12-31'?' (through '+lbl(last)+')':''}</span>`}).join('')
+    +(sel.includes(TRIP_YEAR)?'<span><i class="sw trip"></i>Your trip, Nov 12–18, 2016</span>':'');
+  // hover
+  const cross=el('line',{y1:m.t,y2:m.t+ph,stroke:'var(--ink2)','stroke-width':1,visibility:'hidden'});
+  const dots={};sel.forEach(yr=>dots[yr]=el('circle',{r:4.5,fill:color(yr),stroke:'var(--surface)','stroke-width':2,visibility:'hidden'}));
+  const hit=el('rect',{x:m.l,y:m.t,width:pw,height:ph,fill:'transparent'});
+  const tip=$('tip');
+  function move(ev){
+    const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());
+    let i=Math.round((p.x-m.l)/pw*(N-1));i=Math.max(0,Math.min(N-1,i));const k=keys[i];
+    cross.setAttribute('x1',x(i));cross.setAttribute('x2',x(i));cross.setAttribute('visibility','visible');
+    let h=`<b>${lbl(k)}</b>`+(sel.includes(TRIP_YEAR)&&i>=t0&&i<=t1?' · <span style="color:var(--ink2)">2016 trip</span>':'');
+    sel.slice().sort().forEach(yr=>{const r=data[yr].map[k];const d=dots[yr];
+      if(r){d.setAttribute('cx',x(i));d.setAttribute('cy',y(r[1]));d.setAttribute('visibility','visible')}else d.setAttribute('visibility','hidden');
+      h+=`<div class="row"><span class="k"><i class="sw" style="background:${color(yr)}"></i>${yr}</span><span class="v">${r?fmt(r[1])+' cfs':'—'}${r&&r[3]!=null?` <span class="rng">(${fmt(r[2])}–${fmt(r[3])})</span>`:''}</span></div>`;
+    });
+    tip.innerHTML=h;tip.style.display='block';
+    const tw=tip.offsetWidth,th=tip.offsetHeight;let lx=ev.clientX+14,ly=ev.clientY-th-10;
+    if(lx+tw>innerWidth-8)lx=ev.clientX-tw-14;if(ly<8)ly=ev.clientY+14;
+    tip.style.left=lx+'px';tip.style.top=ly+'px';
+  }
+  function leave(){tip.style.display='none';cross.setAttribute('visibility','hidden');Object.values(dots).forEach(d=>d.setAttribute('visibility','hidden'))}
+  hit.addEventListener('pointermove',move);hit.addEventListener('pointerdown',move);hit.addEventListener('pointerleave',leave);
+}
+
+function peak(rows){let best=null;rows.forEach(r=>{const v=r[3]??r[1];if(v!=null&&(!best||v>best.v))best={md:r[0],v}});return best}
+
+function tables(data){
+  const ys=sel.slice().sort();
+  // summary
+  let h='<tr><th>Year</th><th>Days</th><th>Peak (daily max)</th><th>Highest daily mean</th><th>Median</th><th>Days at 0 cfs</th></tr>';
+  ys.forEach(yr=>{const rows=data[yr].rows;const means=rows.map(r=>r[1]).sort((a,b)=>a-b);
+    const med=means.length?(means.length%2?means[(means.length-1)/2]:(means[means.length/2-1]+means[means.length/2])/2):null;
+    const pk=peak(rows);let hm=null;rows.forEach(r=>{if(!hm||r[1]>hm[1])hm=r});
+    const zeros=rows.filter(r=>r[1]===0).length;const last=rows[rows.length-1][0];
+    h+=`<tr><td><i class="sw" style="background:${color(yr)}"></i>${yr}</td><td>${rows.length}${last!=='12-31'?' <span style="color:var(--muted)">(to '+lbl(last)+')</span>':''}</td><td>${pk?fmt(pk.v)+' · '+lbl(pk.md):'—'}</td><td>${hm?fmt(hm[1])+' · '+lbl(hm[0]):'—'}</td><td>${fmt(med)}</td><td>${zeros}</td></tr>`});
+  $('summary').innerHTML=ys.length?h:'';
+  // daily table
+  const t0=di(TRIP[0]),t1=di(TRIP[1]);
+  let d='<tr><th>Date</th>'+ys.map(yr=>`<th>${yr} mean</th><th>${yr} max</th>`).join('')+'</tr>';
+  keys.forEach((k,i)=>{if(!ys.some(yr=>data[yr].map[k]))return;
+    d+=`<tr${ys.includes(TRIP_YEAR)&&i>=t0&&i<=t1?' class="trip"':''}><td>${lbl(k)}</td>`+ys.map(yr=>{const r=data[yr].map[k];return `<td>${r?fmt(r[1]):''}</td><td>${r?fmt(r[3]):''}</td>`}).join('')+'</tr>'});
+  $('tbl').innerHTML=ys.length?d:'';
+}
+
+setSel(parseHash()||defaults());
+})();
+</script>
 </body>
 </html>

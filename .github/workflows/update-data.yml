@@ -1,0 +1,45 @@
+name: Update flow data
+
+on:
+  schedule:
+    - cron: "17 12 * * *"   # daily, ~7am Central
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "Re-pull every year since 2007"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Pull USGS data
+        run: |
+          if [ "${{ inputs.backfill }}" = "true" ]; then
+            python scripts/update_data.py --all
+          else
+            python scripts/update_data.py
+          fi
+      - name: Commit if changed
+        run: |
+          git add data
+          if git diff --cached --quiet; then
+            echo "No data changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update flow data ($(jq -r .through data/index.json))"
+          git push
