@@ -1,5 +1,5 @@
 {
- "generated": "2026-09-30T20:56:54.093Z",
+ "generated": "2026-09-30T21:03:48.083Z",
  "target": "johnson_ranch",
  "evalYears": [
   2008,
@@ -8130,5 +8130,5 @@
   "switchThreshold": 0.02,
   "recommended": "A-h12"
  },
- "seconds": 256
+ "seconds": 285
 }
