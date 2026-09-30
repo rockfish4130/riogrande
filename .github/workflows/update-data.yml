@@ -35,6 +35,11 @@ jobs:
       - name: Pull IBWC long-record series (Johnson Ranch, Presidio, Conchos, La Boquilla)
         continue-on-error: true   # the portal is flaky; never block the USGS update
         run: python scripts/update_ibwc.py
+      - name: Pull climate predictors (ONI, CHIRPS Conchos rainfall)
+        continue-on-error: true   # CHIRPS is flaky; missing months are retried next run
+        run: |
+          pip install --quiet numpy rasterio
+          python scripts/update_climate.py
       - name: Commit if changed
         run: |
           git add data

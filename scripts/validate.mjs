@@ -15,7 +15,9 @@ const M = require(path.join(ROOT, 'model.js'));
 
 const quick = process.argv.includes('--quick');
 const load = f => JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'ibwc', f), 'utf8'));
-const D = M.bundle({ target: load('johnson_ranch.json'), presidio: load('presidio.json'), storage: load('la_boquilla.json') });
+const loadC = f => JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'climate', f), 'utf8'));
+const D = M.bundle({ target: load('johnson_ranch.json'), presidio: load('presidio.json'), storage: load('la_boquilla.json'),
+  oni: loadC('oni.json'), rain: loadC('conchos_rain.json') });
 
 const EVAL = [2008, 2025];
 const LEADS = [3, 7, 14, 30, 45, 60, 90, 120];
@@ -116,6 +118,11 @@ const SEL = LEADS.filter(k => k <= 60);
 out.selection = { metric: 'mean forward-chained Brier skill, leads ' + SEL.join('/') + ' d, 200-1200 cfs, issued Aug-Nov',
   scores: Object.fromEntries(specKeys.map(s => [s, +(SEL.reduce((t, k) => t + out.results['200-1200'].forward.skill[s][k].fall_bss, 0) / SEL.length).toFixed(3)])) };
 out.selection.best = Object.entries(out.selection.scores).sort((a, b) => b[1] - a[1])[0][0];
+// Pre-set switching rule: only replace the current default if a challenger beats it by more than
+// SWITCH (differences smaller than that are within noise for ~18 evaluation years).
+const SWITCH = 0.02;
+out.selection.switchThreshold = SWITCH;
+out.selection.recommended = out.selection.scores[out.selection.best] - out.selection.scores[M.DEFAULT_SPEC] > SWITCH ? out.selection.best : M.DEFAULT_SPEC;
 out.seconds = Math.round((Date.now() - t0) / 1000);
 fs.writeFileSync(path.join(ROOT, 'data', 'validation.json'), JSON.stringify(out, null, 1) + '\n');
 console.log(`wrote data/validation.json in ${out.seconds}s`);

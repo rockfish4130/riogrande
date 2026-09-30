@@ -4,13 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Big Bend Trip Planner</title>
+<link rel="stylesheet" href="vendor/leaflet-1.9.4/leaflet.css">
 <style>
 :root{
   color-scheme:light;
   --bg:#f6f5f2; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8984;
   --grid:#e6e5e0; --axis:#c9c8c2; --chip:#efeee9;
   --model:#2a78d6; --clim:#8a8984; --band:rgba(42,120,214,.10);
-  --low:#eb6834; --ok:#86b6ef; --ideal:#2a78d6; --high:#4a3aa7; --none:#ecebe6;
+  --low:#eb6834; --ok:#86b6ef; --ideal:#2a78d6; --high:#4a3aa7; --none:#ecebe6; --res:#1baf7a;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -18,7 +19,7 @@
     --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --muted:#8f8e86;
     --grid:#2c2c2a; --axis:#44433f; --chip:#262624;
     --model:#3987e5; --clim:#8f8e86; --band:rgba(57,135,229,.14);
-    --low:#d95926; --ok:#1c5aa6; --ideal:#5b9ceb; --high:#9085e9; --none:#232322;
+    --low:#d95926; --ok:#1c5aa6; --ideal:#5b9ceb; --high:#9085e9; --none:#232322; --res:#199e70;
   }
 }
 :root[data-theme="dark"]{
@@ -26,7 +27,7 @@
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --muted:#8f8e86;
   --grid:#2c2c2a; --axis:#44433f; --chip:#262624;
   --model:#3987e5; --clim:#8f8e86; --band:rgba(57,135,229,.14);
-  --low:#d95926; --ok:#1c5aa6; --ideal:#5b9ceb; --high:#9085e9; --none:#232322;
+  --low:#d95926; --ok:#1c5aa6; --ideal:#5b9ceb; --high:#9085e9; --none:#232322; --res:#199e70;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -57,7 +58,7 @@ h3{font-size:14px;margin:18px 0 4px;font-weight:650}
 .sw{width:18px;height:3px;border-radius:2px;display:inline-block}
 .sw.dash{height:0;border-top:2px dashed var(--clim)}
 .sq{width:11px;height:11px;border-radius:2px;display:inline-block}
-svg{display:block;width:100%;height:auto;overflow:visible}
+.plot svg{display:block;width:100%;height:auto;overflow:visible}
 .plot{overflow-x:auto}.plot svg{min-width:680px}
 .tick{fill:var(--muted);font-size:11px}
 .alabel{font-size:11px;fill:var(--ink2);paint-order:stroke;stroke:var(--surface);stroke-width:3px}
@@ -79,6 +80,15 @@ details{margin-top:8px}
 summary{cursor:pointer;color:var(--ink2)}
 .src{color:var(--muted);font-size:12px;margin-top:24px}
 .src a{color:var(--ink2)}
+#map{height:500px;border-radius:10px;border:1px solid var(--grid);background:var(--bg)}
+@media (max-width:640px){#map{height:380px}}
+.leaflet-popup-content{font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+.leaflet-popup-content b{font-size:13.5px}
+.srcrow{cursor:pointer}
+.srcrow:hover td{background:var(--chip)}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--axis);color:var(--ink2);white-space:nowrap}
+.tag.model{border-color:var(--model);color:var(--model);font-weight:600}
+.dotk{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px;border:1.5px solid var(--surface)}
 </style>
 </head>
 <body>
@@ -114,8 +124,21 @@ summary{cursor:pointer;color:var(--ink2)}
   </div>
 
   <h2>Upstream right now</h2>
-  <p class="prose" style="color:var(--ink2)">The model's forecast rests on baseflow at Johnson Ranch. These upstream readings were tested as extra inputs and didn't improve validated skill (see "How the design was chosen" below). They're still the first place a change shows up, so they're shown here for your own judgment.</p>
+  <p class="prose" style="color:var(--ink2)">The model's forecast rests on baseflow at Johnson Ranch. Everything here was tested as an extra model input and didn't improve validated skill (see "How the design was chosen" below). Upstream flow is still the first place a change shows up, and the climate readings are useful context, so they're shown for your own judgment.</p>
   <div class="headline" id="upstream"></div>
+
+  <h2 id="sources">Where the data comes from</h2>
+  <p class="prose" style="color:var(--ink2)">Every source behind this page, on a map and in a table. Click a table row to find it on the map, or a marker for details and a link to the live source. <b>Model input</b> means the default forecast uses it. <b>Context</b> means it's shown for judgment only: it was tested as a model input and didn't improve validated skill.</p>
+  <div class="card">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center">
+      <div class="legend" id="mapLegend" style="margin:0"></div>
+      <span class="seg" id="mapView"><button type="button" data-v="all" aria-pressed="true">Whole basin</button><button type="button" data-v="reach">Big Bend reach</button></span>
+    </div>
+    <div style="height:8px"></div>
+    <div id="map" role="region" aria-label="Map of data sources"></div>
+    <p class="note" id="mapNote" style="margin:6px 2px 0">The basin outline is an approximation drawn for the rainfall index, and the trip route is straight segments between access points, not the river's actual path.</p>
+  </div>
+  <div class="scroll" style="margin-top:10px"><table id="srcTable"></table></div>
 
   <h2>Which weeks are usually good, and is it changing?</h2>
   <p class="prose" style="color:var(--ink2)">The lines show the share of years in which a trip starting that day stayed in range the whole way (current trip length and range): for the whole record, and for the last 20 years. The grid shows every year since 1936 (newest at top): each column is a start date, and each cell is colored by what that trip would have met.</p>
@@ -191,12 +214,14 @@ summary{cursor:pointer;color:var(--ink2)}
     </ul>
 
     <h3>5. How the design was chosen (including what didn't work)</h3>
-    <p>Twelve candidate specs were compared (the full table is above). They vary three things: <b>which inputs</b> (baseflow; plus Presidio 3-day mean flow; plus La Boquilla storage), <b>which years</b> (2007+, 1936+, 1993+), and <b>recency half-life</b> (none, 25, 12, 8 or 5 years). The rule chosen in advance was the best mean forward-chained Brier skill for leads of 3–60 days, 200–1,200 cfs, issued Aug–Nov.</p>
+    <p>Seventeen candidate specs were compared (the full table is above). They vary three things: <b>which inputs</b> (baseflow; plus Presidio 3-day mean flow; La Boquilla storage; El Niño; Conchos basin rainfall), <b>which years</b> (2007+, 1936+, 1950+, 1982+, 1993+), and <b>recency half-life</b> (none, 25, 12, 8 or 5 years). Every added input gets a baseline trained on the same years, so the comparison is fair. The rule was set in advance: the score is mean forward-chained Brier skill for leads of 3–60 days, 200–1,200 cfs, issued Aug–Nov, and a challenger has to beat the current default by more than 0.02 to replace it.</p>
     <ul>
       <li><b>Long record plus a 12-year half-life</b> won (≈ +0.32 on that metric). Half-lives of 8–25 years were within noise of it. With no weighting, skill went negative beyond 90 days.</li>
       <li><b>v1's design</b> (only the Castolon-era years, 2007+) scored ≈ +0.13 under forward chaining. It looked fine in leave-one-year-out, because there it's allowed to learn from future years.</li>
       <li><b>Presidio flow</b> made no difference at any tested lead, including 3 days. Once you know Johnson Ranch baseflow, Presidio adds little for week-long windows, and pulses big enough to matter are rare on any given issue date.</li>
       <li><b>La Boquilla storage</b> made things slightly <i>worse</i>. It's only available since 1993, so the model loses 57 years of training, and on its own it's a weak signal (Oct-1 storage terciles gave 46% / 58% / 78% November runnable). Most of its information seems to already be in current baseflow.</li>
+      <li><b>El Niño / La Niña (ONI)</b> made things slightly worse (about −0.01 to −0.03 against a baseline trained on the same 1950+ years). The raw relationship is essentially zero: across 1982–2025, the Oct-1 ONI correlates −0.01 with the share of runnable November weeks, and −0.01 with January–March. ENSO mostly moves cool-season rain, but this river's fall and winter water comes from the summer monsoon and managed releases.</li>
+      <li><b>Monsoon rainfall</b> (CHIRPS, a Conchos-basin 4-month anomaly) made things worse (about −0.05 to −0.07 against a same-years baseline), with a small, inconsistent gain only at 90–120 day leads. The raw signal is real: November was runnable 54% of the time after dry monsoons and 76% after wet ones. But rainfall correlates +0.42 with Oct-1 baseflow, and once baseflow is known, the leftover correlation with November is +0.02 (+0.17 for Jan–Mar). In other words, the river has already told you how wet the monsoon was.</li>
       <li>The negative results are reported on purpose. Adding inputs that don't help is the most common way these models fool their authors.</li>
     </ul>
 
@@ -205,7 +230,7 @@ summary{cursor:pointer;color:var(--ink2)}
       <li><b>Calibration depends on the recent regime.</b> Without the correction, the model runs high in the 10–70% range. With it, calibration matches 2008–2025. If the next decade is wetter or drier than that, both the base model and the correction will be biased until they catch up.</li>
       <li><b>Storms.</b> The model doesn't know about rain in the next few days, and a flash flood can fail any week. Check the <a href="https://water.noaa.gov/gauges/prst2">NWS Presidio gauge</a> and the weather forecast in the final week.</li>
       <li><b>Human decisions.</b> Conchos releases are managed (irrigation districts, and Mexico's delivery obligations under the 1944 Water Treaty, which run in 5-year cycles; the current one began Oct 25, 2025). A release decision can change things in days.</li>
-      <li><b>Not tested yet:</b> ENSO (El Niño is strongly positive in mid-2026), basin rainfall (CHIRPS), and NOAA seasonal outlooks. See CONTEXT.md.</li>
+      <li><b>Not tested yet:</b> NOAA seasonal <i>forecasts</i> (as opposed to observed ENSO), and a separate same-week model for leads of 0–3 days. See CONTEXT.md.</li>
     </ul>
 
     <h3>7. How to read it</h3>
@@ -228,9 +253,10 @@ summary{cursor:pointer;color:var(--ink2)}
       <span class="note" id="copyMsg"></span>
     </div>
   </div>
-  <p class="src">Data: <a href="https://waterdata.ibwc.gov/AQWebportal/Data">IBWC Water Data Portal</a> (08375000, 08374200, La Boquilla via CONAGUA) · <span id="through"></span> · <a href="https://github.com/rockfish4130/riogrande">source code</a> (<span class="mono">model.js</span>, <span class="mono">planner.html</span>, <span class="mono">scripts/validate.mjs</span>)</p>
+  <p class="src">Data: <a href="#sources">all sources and map</a> · <span id="through"></span> · <a href="https://github.com/rockfish4130/riogrande">source code</a> (<span class="mono">model.js</span>, <span class="mono">planner.html</span>, <span class="mono">scripts/validate.mjs</span>)</p>
 </div>
 <div class="tip" id="tip"></div>
+<script src="vendor/leaflet-1.9.4/leaflet.js"></script>
 <script src="model.js"></script>
 <script>
 document.getElementById('copyCtx').onclick=async()=>{const msg=document.getElementById('copyMsg');msg.textContent='Fetching…';
@@ -255,8 +281,8 @@ const hideTip=()=>tip.style.display='none';
 
 // ---------- data ----------
 const J=u=>fetch(u,{cache:'no-cache'}).then(r=>r.ok?r.json():null);
-const [jr,pres,lb,ojin,val]=await Promise.all(['data/ibwc/johnson_ranch.json','data/ibwc/presidio.json','data/ibwc/la_boquilla.json','data/ibwc/conchos_ojinaga.json','data/validation.json'].map(J));
-const D=M.bundle({target:jr,presidio:pres,storage:lb});
+const [jr,pres,lb,ojin,val,oni,rain]=await Promise.all(['data/ibwc/johnson_ranch.json','data/ibwc/presidio.json','data/ibwc/la_boquilla.json','data/ibwc/conchos_ojinaga.json','data/validation.json','data/climate/oni.json','data/climate/conchos_rain.json'].map(J));
+const D=M.bundle({target:jr,presidio:pres,storage:lb,oni,rain});
 const OJ=ojin?M.series(ojin):null;
 const FIRST=D.T.start, LAST=D.T.end;
 $('through').textContent='Johnson Ranch data through '+fmtDY(LAST);
@@ -354,6 +380,9 @@ function upstream(){
   const sv=M.xStore(D.R,d);if(sv!=null){const r=pctRank(dd=>{const v=M.xStore(D.R,dd);return v==null?null:v*1000},d,D.years.filter(y=>y>=1993),yr);
     tiles.push(['La Boquilla storage',Math.round(sv*1000).toLocaleString()+' million m³',r?`Largest Conchos reservoir. ${rankTxt(r,'years (1993+) on this date')} The record high is about 2,940.`:''])}
   else tiles.push(['La Boquilla storage','—','No storage data for this date (the record starts in 1993).']);
+  if(D.aux.rain){const x=D.aux.rain(d);if(x!=null){const r=pctRank(dd=>D.aux.rain(dd),d,D.years.filter(y=>y>=1982),yr);
+    tiles.push(['Conchos basin rainfall, last 4 months',Math.round(Math.exp(x)*100)+'% of normal',`CHIRPS satellite rainfall over the four most recent published months, vs the 1991–2020 normal. ${r?rankTxt(r,'years (1982+) on this date'):''}`])}}
+  if(D.aux.oni){const v=D.aux.oni(d);if(v!=null)tiles.push(['El Niño / La Niña (ONI)',(v>0?'+':'')+v.toFixed(2)+' °C',v>=0.5?`El Niño conditions${v>=1.5?' (strong)':''}. Latest season published by this date.`:v<=-0.5?'La Niña conditions. Latest season published by this date.':'Neutral. Latest season published by this date.'])}
   $('upstream').innerHTML=tiles.map(([k,v,dd])=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${dd}</div></div>`).join('');
 }
 
@@ -409,7 +438,7 @@ function drawValidation(){
   const R=val.results[vs.target][vs.scheme];const RCk=val.results[vs.target].recalibrated?.spec;const L=val.leads;const f=v=>v==null?'—':(v>=0?'+':'')+v.toFixed(2);
   let h='<tr><th>Model</th>'+L.map(k=>`<th>${k} d</th>`).join('')+'<th style="text-align:left">Description</th></tr>';
   Object.keys(val.specs).forEach(s=>{const r=R.skill[s];const cur=s===st.spec&&!(st.recal&&RCk===s&&vs.scheme==='forward');
-    h+=`<tr style="${cur?'background:var(--chip);font-weight:650':''}"><td>${s}${s===val.selection?.best?' ★':''}</td>`+L.map(k=>`<td>${f(vs.season==='fall'?r[k].fall_bss:r[k].bss)}</td>`).join('')+`<td style="text-align:left;white-space:normal;color:var(--ink2)">${val.specs[s]}</td></tr>`});
+    h+=`<tr style="${cur?'background:var(--chip);font-weight:650':''}"><td>${s}${s===(val.selection?.recommended||val.selection?.best)?' ★':''}${val.selection?.recommended&&s===val.selection.best&&s!==val.selection.recommended?' †':''}</td>`+L.map(k=>`<td>${f(vs.season==='fall'?r[k].fall_bss:r[k].bss)}</td>`).join('')+`<td style="text-align:left;white-space:normal;color:var(--ink2)">${val.specs[s]}</td></tr>`});
   const RC=val.results[vs.target].recalibrated;
   if(RC&&vs.scheme==='forward'){h+=`<tr style="${st.spec===RC.spec&&st.recal?'background:var(--chip);font-weight:650':''}"><td>${RC.spec} + calibration</td>`+L.map(k=>`<td>${f(vs.season==='fall'?RC.skill[k].fall_bss:RC.skill[k].bss)}</td>`).join('')+`<td style="text-align:left;white-space:normal;color:var(--ink2)">The model in use by default: ${RC.spec} with per-lead Platt recalibration. For each year, the correction is fit on the other years' forward forecasts.</td></tr>`}
   else if(RC)h+=`<tr><td colspan="${L.length+2}" style="text-align:left;color:var(--muted);white-space:normal">The recalibrated model is scored under Forward only, because its correction is fit on forward-chained forecasts.</td></tr>`;
@@ -421,11 +450,56 @@ function drawValidation(){
   C.forEach(b=>{if(!b.n)return;c+=`<tr><td>${Math.round(b.bin[0]*100)}–${Math.round(b.bin[1]*100)}%</td><td>${b.n}</td><td>${pct(b.mean_p)}</td><td>${pct(b.observed)}</td></tr>`});
   $('calib').innerHTML=c;
   const n=R.skill[st.spec][L[1]].n;const recNote=st.recal?'':' Calibration correction is switched off above.';
-  $('vnote').textContent=`★ = chosen by the pre-set rule (${val.selection?.metric}). About ${n} scored forecasts per lead time (18 years × ~37 issue dates). Forecasts at nearby dates share information, so differences under about ±0.03 are noise. Generated ${val.generated.slice(0,10)} in ${val.seconds}s by scripts/validate.mjs.`+(st.len!==7?' Note: validation is for 7-day trips; you have a different length selected.':'')+recNote;
+  $('vnote').textContent=`★ = the model kept by the pre-set rule (${val.selection?.metric}; a challenger must win by more than ${val.selection?.switchThreshold??0.02} to replace the default).${val.selection?.recommended&&val.selection.best!==val.selection.recommended?` † = top score (${val.selection.scores[val.selection.best].toFixed(3)} vs ${val.selection.scores[val.selection.recommended].toFixed(3)}), within noise, so not adopted.`:''} About ${n} scored forecasts per lead time (18 years × ~37 issue dates). Forecasts at nearby dates share information, so differences under about ±0.03 are noise. Generated ${val.generated.slice(0,10)} in ${val.seconds}s by scripts/validate.mjs.`+(st.len!==7?' Note: validation is for 7-day trips; you have a different length selected.':'')+recNote;
+}
+
+// ---------- sources + map ----------
+const IB=id=>`https://waterdata.ibwc.gov/AQWebportal/Data/Location/Summary/Location/${encodeURIComponent(id)}/Interval/Latest`;
+const dms=(d,m,s)=>(d<0?-1:1)*(Math.abs(d)+m/60+s/3600);
+const SRC=[
+  {k:'jr',name:'Rio Grande at Johnson Ranch nr Castolon',id:'IBWC 08375000',lat:dms(29,2,6),lon:dms(-103,23,27),kind:'model',span:'1936 →',role:'Model target and its only default predictor (7-day minimum baseflow). Tracks the USGS Castolon gauge closely.',url:IB('08375000')},
+  {k:'cas',name:'Rio Grande near Castolon',id:'USGS 08374550',lat:dms(29,8,16),lon:dms(-103,31,29),kind:'chart',span:'2007 →',role:'Shown on the Flow chart tab (plus the USGS historical-normal band). This was the v1 model target.',url:'https://waterdata.usgs.gov/monitoring-location/USGS-08374550/'},
+  {k:'pre',name:'Rio Grande below Rio Conchos nr Presidio',id:'IBWC 08374200',lat:dms(29,31,12),lon:dms(-104,17,11),kind:'context',span:'1900 →',role:'Upstream flow, 1–3 days ahead of Johnson Ranch. Tested as a model input: no gain.',url:IB('08374200')},
+  {k:'prst2',name:'NWS river gauge, Presidio (PRST2)',id:'NOAA NWPS PRST2',lat:29.56,lon:-104.37,kind:'context',span:'live',role:'The National Weather Service gauge page, with forecasts when issued. Check it in the final week before a trip.',url:'https://water.noaa.gov/gauges/prst2'},
+  {k:'oji',name:'Rio Conchos near Ojinaga',id:'IBWC 08373000',lat:dms(29,34,56),lon:dms(-104,25,47),kind:'context',span:'1954 →',role:'The Rio Conchos just above its confluence with the Rio Grande, where most of the reach\'s water comes from.',url:IB('08373000')},
+  {k:'ter',name:'Terlingua Creek near Terlingua',id:'IBWC 08374500',lat:dms(29,11,59),lon:dms(-103,36,20),kind:'context',span:'1932 →',role:'Flashy tributary entering just above Castolon. The source of many storm spikes at Castolon and Johnson Ranch. Collected, not used.',url:IB('08374500')},
+  {k:'lbq',name:'La Boquilla Reservoir',id:'CONAGUA via IBWC',lat:dms(27,32,21),lon:dms(-105,23,30),kind:'reservoir',span:'1993 →',role:'Largest reservoir on the Conchos (storage). Tested as a model input: slightly worse.',url:IB('08-LBQCH-CONAGUA')},
+  {k:'fim',name:'Francisco I. Madero Reservoir',id:'CONAGUA via IBWC',lat:dms(28,9,55),lon:dms(-105,37,30),kind:'reservoir',span:'2015 →',role:'Rio San Pedro, a Conchos tributary. Available on the IBWC portal. Not used.',url:IB('08-FIMCH-CONAGUA')},
+  {k:'lln',name:'Luis L. León Reservoir (El Granero)',id:'CONAGUA via IBWC',lat:dms(28,59,0),lon:dms(-105,16,50),kind:'reservoir',span:'2015 →',role:'Lowest dam on the Conchos. Its releases reach Ojinaga directly. Available on the IBWC portal. Not used.',url:IB('08-LLNCH-CONAGUA')},
+];
+const TRIP=[{name:'Redford (Colorado Canyon put-in)',lat:29.447,lon:-104.189},{name:'Lajitas',lat:29.261,lon:-103.776},{name:'Santa Elena Canyon take-out',lat:29.167,lon:-103.611}];
+const GLOBAL=[
+  {name:'Rio Conchos basin rainfall',id:'CHIRPS v2.0 (UCSB Climate Hazards Center)',kind:'context',span:'1981 →',role:'Monthly satellite-gauge rainfall averaged over the basin outline on the map. Tested as a model input: no gain.',url:'https://www.chc.ucsb.edu/data/chirps'},
+  {name:'El Niño / La Niña: Oceanic Niño Index',id:'NOAA CPC (Niño 3.4, equatorial Pacific)',kind:'context',span:'1950 →',role:'Global climate index measured in the tropical Pacific, not on this map. Tested as a model input: no gain.',url:'https://origin.cpc.ncep.noaa.gov/products/analysis_monitoring/ensostuff/ONI_v5.php'},
+  {name:'River guide thresholds (200 / 300–1,000 / 1,200 cfs)',id:'Southwest Paddler',kind:'model',span:'—',role:'Where the flow range comes from: guides for Colorado Canyon and Santa Elena Canyon.',url:'https://southwestpaddler.com/docs/riogrande2.html'},
+];
+const KIND={model:['Model input','--model'],context:['Context','--muted'],reservoir:['Reservoir (context)','--res'],chart:['Flow chart','--ink2'],trip:['Trip access point','--low']};
+function drawSources(){
+  const tag=k=>`<span class="tag ${k==='model'?'model':''}">${KIND[k][0]}</span>`;
+  let h='<tr><th>Source</th><th>ID</th><th>Record</th><th>Use</th><th style="text-align:left">Role</th></tr>';
+  SRC.forEach((x,i)=>h+=`<tr class="srcrow" data-i="${i}"><td><i class="dotk" style="background:var(${KIND[x.kind][1]})"></i><a href="${x.url}" target="_blank" rel="noopener">${x.name}</a></td><td>${x.id}</td><td>${x.span}</td><td>${tag(x.kind==='reservoir'?'context':x.kind==='chart'?'context':x.kind)}</td><td style="text-align:left;white-space:normal;color:var(--ink2)">${x.role}</td></tr>`);
+  GLOBAL.forEach(x=>h+=`<tr><td><i class="dotk" style="background:transparent;border-color:var(--axis)"></i><a href="${x.url}" target="_blank" rel="noopener">${x.name}</a></td><td>${x.id}</td><td>${x.span}</td><td>${tag(x.kind)}</td><td style="text-align:left;white-space:normal;color:var(--ink2)">${x.role}</td></tr>`);
+  $('srcTable').innerHTML=h;
+  $('mapLegend').innerHTML=['model','context','reservoir','chart','trip'].map(k=>`<span><i class="dotk" style="background:var(${KIND[k][1]})"></i>${KIND[k][0]}</span>`).join('')+'<span><i class="sw" style="height:0;border-top:2px dashed var(--ink2)"></i>Rio Conchos basin (approx.)</span><span><i class="sw" style="background:var(--low)"></i>Trip route (approx.)</span>';
+  if(!window.L){$('map').innerHTML='<p class="note" style="padding:12px">The map library didn\'t load. The table below has every source and link.</p>';return}
+  const map=L.map('map',{scrollWheelZoom:false});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
+  const basin=rain&&rain.polygon?rain.polygon.map(([lo,la])=>[la,lo]):null;
+  if(basin)L.polygon(basin,{color:css('--ink2'),weight:1.5,dashArray:'6 5',fillColor:css('--model'),fillOpacity:.06}).addTo(map).bindPopup('<b>Rio Conchos basin (approximate)</b><br>The area averaged for the CHIRPS rainfall index. Drawn by hand from the basin\'s known extent; see scripts/update_climate.py.');
+  L.polyline(TRIP.map(t=>[t.lat,t.lon]),{color:css('--low'),weight:4,opacity:.85}).addTo(map).bindPopup('<b>Trip reach (approximate)</b><br>Colorado Canyon (Redford → Lajitas, ~34 mi) and Santa Elena Canyon (Lajitas → take-out, ~22 mi).');
+  TRIP.forEach(t=>L.circleMarker([t.lat,t.lon],{radius:5,color:css('--surface'),weight:1.5,fillColor:css('--low'),fillOpacity:1}).addTo(map).bindTooltip(t.name));
+  const mk=SRC.map(x=>L.circleMarker([x.lat,x.lon],{radius:x.kind==='model'?9:7,color:css('--surface'),weight:2,fillColor:css(KIND[x.kind][1])||'#888',fillOpacity:1})
+    .addTo(map).bindPopup(`<b>${x.name}</b><br>${x.id} · record ${x.span}<br>${x.role}<br><a href="${x.url}" target="_blank" rel="noopener">Open live data →</a>`).bindTooltip(x.name));
+  const all=[...SRC.map(x=>[x.lat,x.lon]),...TRIP.map(t=>[t.lat,t.lon]),...(basin||[])];
+  map.fitBounds(all,{padding:[20,20]});
+  const reach=[...SRC.filter(x=>['jr','cas','pre','prst2','oji','ter'].includes(x.k)).map(x=>[x.lat,x.lon]),...TRIP.map(t=>[t.lat,t.lon])];
+  document.querySelectorAll('#mapView button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#mapView button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+    map.flyToBounds(b.dataset.v==='reach'?reach:all,{padding:[30,30],duration:.8})});
+  document.querySelectorAll('.srcrow').forEach(r=>r.addEventListener('click',ev=>{if(ev.target.tagName==='A')return;const i=+r.dataset.i;map.flyTo([SRC[i].lat,SRC[i].lon],10,{duration:.8});mk[i].openPopup();$('map').scrollIntoView({behavior:'smooth',block:'center'})}));
 }
 
 function update(asofOnly){syncInputs();writeHash();const pts=drawForecast();headline(pts);upstream();drawValidation();if(!asofOnly)drawClim()}
-update(false);
+update(false);drawSources();
 window.addEventListener('hashchange',()=>{readHash();update(false)});
 let rz;window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(drawClim,200)});
 })();

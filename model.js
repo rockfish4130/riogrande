@@ -65,6 +65,38 @@
     return null;
   }
 
+  // ENSO: ONI anomaly for the latest 3-month season that would have been published by day d.
+  // CPC posts a season early in the following month, so we use the season ending in the previous
+  // month once we're past the 10th, otherwise the one ending two months back.
+  // ONI rows are [SEAS, YEAR, ANOM]; YEAR is the year of the season's middle month.
+  const SEAS = ['DJF', 'JFM', 'FMA', 'MAM', 'AMJ', 'MJJ', 'JJA', 'JAS', 'ASO', 'SON', 'OND', 'NDJ'];
+  function oniLookup(doc) {
+    const m = new Map(); for (const [sea, yr, a] of doc.rows) m.set(yr * 12 + SEAS.indexOf(sea), a); // key = middle month (0-based seq)
+    return d => {
+      const t = toDate(d); let last = t.getUTCFullYear() * 12 + t.getUTCMonth() - (t.getUTCDate() >= 10 ? 1 : 2);
+      const v = m.get(last - 1); return v === undefined ? null : v; // middle month = last - 1
+    };
+  }
+  // Basin rainfall: log ratio of CHIRPS Rio Conchos rainfall over the 4 most recent months that
+  // were published by day d (a month is treated as available 20 days after it ends) to the
+  // 1991-2020 normal for those same calendar months. + means wetter than normal.
+  function rainLookup(doc) {
+    const M = doc.months, clim = Array(12).fill(0), cnt = Array(12).fill(0);
+    for (const [k, v] of Object.entries(M)) { const y = +k.slice(0, 4), mo = +k.slice(5, 7) - 1; if (y >= 1991 && y <= 2020) { clim[mo] += v; cnt[mo]++; } }
+    for (let i = 0; i < 12; i++) clim[i] /= cnt[i] || 1;
+    return d => {
+      const t = toDate(d); let y = t.getUTCFullYear(), mo = t.getUTCMonth() - 1; // previous month
+      if (t.getUTCDate() < 21) mo -= 1;                                          // not yet published
+      let s = 0, c = 0;
+      for (let i = 0; i < 4; i++) {
+        let mm = mo - i, yy = y; while (mm < 0) { mm += 12; yy--; }
+        const v = M[`${yy}-${String(mm + 1).padStart(2, '0')}`]; if (v === undefined) return null;
+        s += v; c += clim[mm];
+      }
+      return Math.log((s + 10) / (c + 10));
+    };
+  }
+
   // ---------------- specs ----------------
   // Each spec: which predictors, earliest training year, recency half-life (years; Infinity = none).
   const SPECS = {
@@ -80,6 +112,11 @@
     'A-h5':      { label: 'Baseflow only, 1936+, 5-yr half-life', up: false, store: false, minYear: 1936, half: 5 },
     'B-h8':      { label: 'Baseflow + Presidio, 1936+, 8-yr half-life', up: true, store: false, minYear: 1936, half: 8 },
     'C-h12':     { label: 'Baseflow + Presidio + storage, 1993+, 12-yr half-life', up: true, store: true, minYear: 1993, half: 12 },
+    'A-h12-1950':{ label: 'Baseflow only, 1950+, 12-yr half-life (fair baseline for ENSO)', up: false, store: false, minYear: 1950, half: 12 },
+    'E-h12':     { label: 'Baseflow + ENSO (ONI), 1950+, 12-yr half-life', up: false, store: false, extra: ['oni'], minYear: 1950, half: 12 },
+    'A-h12-1982':{ label: 'Baseflow only, 1982+, 12-yr half-life (fair baseline for rainfall)', up: false, store: false, minYear: 1982, half: 12 },
+    'R-h12':     { label: 'Baseflow + Conchos basin rainfall (4-mo anomaly), 1982+, 12-yr half-life', up: false, store: false, extra: ['rain'], minYear: 1982, half: 12 },
+    'ER-h12':    { label: 'Baseflow + ENSO + basin rainfall, 1982+, 12-yr half-life', up: false, store: false, extra: ['oni', 'rain'], minYear: 1982, half: 12 },
   };
   const DEFAULT_SPEC = 'A-h12'; // best forward-chained skill (see data/validation.json .selection)
 
@@ -93,6 +130,7 @@
     const f = [xb];
     if (spec.up) { const xp = xUp(D.P, d); if (xp === null) return null; f.push(xp); }
     if (spec.store) { const xs = xStore(D.R, d); if (xs === null) return null; f.push(xs); }
+    if (spec.extra) for (const k of spec.extra) { const fn = D.aux && D.aux[k]; const v = fn ? fn(d) : null; if (v === null || v === undefined) return null; f.push(v); }
     return f;
   }
 
@@ -204,10 +242,11 @@
   function bundle(docs) {
     const T = series(docs.target), P = docs.presidio ? series(docs.presidio) : null, R = docs.storage ? series(docs.storage) : null;
     const years = []; for (let y = yearOf(T.start); y <= yearOf(T.end); y++) years.push(y);
-    return { T, P, R, years };
+    const aux = {}; if (docs.oni) aux.oni = oniLookup(docs.oni); if (docs.rain) aux.rain = rainLookup(docs.rain);
+    return { T, P, R, years, aux };
   }
 
   return { SPECS, DEFAULT_SPEC, P_MIN, P_MAX, L2, WINDOW, STEP, BLEND_A, BLEND_B,
     dn, toDate, yearOf, isoToDn, dnToIso, sameDay, series, bundle,
-    outcome, classify, xBase, xUp, xStore, features, sample, fit, predict, forecast, quadWeight, recalibrate, fitPlatt, clamp };
+    oniLookup, rainLookup, outcome, classify, xBase, xUp, xStore, features, sample, fit, predict, forecast, quadWeight, recalibrate, fitPlatt, clamp };
 });

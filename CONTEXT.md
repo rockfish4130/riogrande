@@ -46,11 +46,15 @@ data/stats.json             USGS daily statistics: {"begin","end","fields":[...]
 data/ibwc/<key>.json        IBWC long-record series: {"key","dataset","name","unit","start":"YYYY-MM-DD","end","v":[daily values, null = missing]}
                               keys: johnson_ranch, presidio, conchos_ojinaga, terlingua (cfs); la_boquilla (million m3)
 data/ibwc/index.json        Summary of the IBWC files (name, unit, start, end, days with data)
+data/climate/oni.json       NOAA CPC Oceanic Niño Index: {"source","note","rows":[["DJF",1950,-1.53],...]}  (year = middle month's year)
+data/climate/conchos_rain.json  CHIRPS monthly basin-mean rainfall: {"source","region","polygon":[[lon,lat],...],"unit","months":{"1981-01":mm,...}}
+vendor/leaflet-1.9.4/       Leaflet (BSD-2) for the planner's sources map. Vendored so the page has no external JS.
 data/validation.json        Cross-validation results for every model spec + recalibration table (written by scripts/validate.mjs)
 scripts/update_data.py      USGS pull -> data/*.json (Python stdlib only)
 scripts/update_ibwc.py      IBWC pull -> data/ibwc/*.json (Python stdlib only)
+scripts/update_climate.py   ONI + CHIRPS pull -> data/climate/*.json (needs numpy + rasterio; CHIRPS read via HTTP range requests on COGs)
 scripts/validate.mjs        Node: cross-validates all specs in model.js, fits the recalibration, writes data/validation.json (~3 min)
-.github/workflows/update-data.yml   Daily 12:17 UTC: USGS + IBWC pulls, commit if changed (manual "backfill" option for USGS)
+.github/workflows/update-data.yml   Daily 12:17 UTC: USGS + IBWC + climate pulls, commit if changed (manual "backfill" option for USGS)
 .github/workflows/validate.yml      Weekly (Mon) + on changes to model.js/validate.mjs: re-run validation, commit
 ```
 
@@ -126,6 +130,8 @@ A trip starting on day *t* with length *L* (default 7) is **runnable** iff the *
 - `xBase` = log10(max(1, min daily mean at the target gauge over the 7 days ending on the as-of date)). Needs ≥5 of 7 days. This is **the only predictor in the default model.**
 - `xUp` = log10 of the Presidio (08374200) mean over the 3 days ending on the as-of date. Tested; not in the default.
 - `xStore` = La Boquilla storage in km³ (latest value within 7 days). Tested; not in the default.
+- `oni` (`oniLookup`) = the ONI anomaly for the latest 3-month season *published by* the as-of date. It uses the season ending last month if the as-of day is ≥10, otherwise the one ending two months back. Tested; not in the default.
+- `rain` (`rainLookup`) = log((R4 + 10) / (N4 + 10)), where R4 is CHIRPS basin rainfall summed over the 4 most recent months *published by* the as-of date (a month counts as available from the 21st of the following month), and N4 is the 1991–2020 normal for those calendar months. Tested; not in the default.
 
 ### 5.3 Model
 
@@ -154,6 +160,10 @@ P = σ(β0 + β1·z1 + β2·z1² [+ β·z_up] [+ β·z_store])     z = standardi
 | B, B-h25, B-h12, B-h8 | base + Presidio | 1936+ | none / 25 / 12 / 8 |
 | C | base + Presidio + storage | 1993+ | none |
 | C-h12 | base + Presidio + storage | 1993+ | 12 |
+| A-h12-1950 / E-h12 | base / base + ONI | 1950+ | 12 |
+| A-h12-1982 / R-h12 / ER-h12 | base / base + rain / base + ONI + rain | 1982+ | 12 |
+
+Each added climate input has a baseline trained on exactly the same years (`A-h12-1950`, `A-h12-1982`), so a gain or loss isn't just a side effect of the shorter record.
 
 ### 5.5 Validation (`scripts/validate.mjs`)
 
@@ -162,7 +172,7 @@ P = σ(β0 + β1·z1 + β2·z1² [+ β·z_up] [+ β·z_store])     z = standardi
   - **forward:** train only on years < target year. This is realistic and is the primary scheme.
   - **loyo:** train on all other years.
 - **Score:** the Brier skill score against a **common reference**, the unweighted 1993+ base rate for that date and lead (target year excluded; for forward, years < target). "Fall" = issued Aug–Nov (day of year 212–334).
-- **Selection rule (fixed in advance):** the best mean forward BSS over leads 3–60 d, 200–1,200 cfs, fall. Scores:
+- **Selection rule (fixed in advance):** the score is mean forward BSS over leads 3–60 d, 200–1,200 cfs, fall. **A challenger replaces the default only if it wins by more than 0.02**; `validation.json → selection.recommended` applies that rule. Scores:
 
 | spec | score | | spec | score |
 |---|---|---|---|---|
@@ -171,9 +181,11 @@ P = σ(β0 + β1·z1 + β2·z1² [+ β·z_up] [+ β·z_store])     z = standardi
 | B-h8 | 0.312 | | C-h12 | 0.242 |
 | A-h25 / A-h8 | 0.310 | | C | 0.240 |
 | B-h25 | 0.299 | | v1-like | 0.115 |
-| A | 0.294 | | | |
+| A | 0.294 | | E-h12 (+ONI) | 0.302 |
+| A-h12-1982 | 0.318 | | R-h12 (+rain) | 0.254 |
+| A-h12-1950 | 0.316 | | ER-h12 (+both) | 0.227 |
 
-  A-h12, A-h8, B-h12 and B-h8 are within noise of each other (±0.03). A-h12 was kept as the simplest.
+  A-h12-1982 scored highest, but only by 0.002, so under the rule A-h12 stays the default. A-h12, A-h8, B-h12 and B-h8 are all within noise of each other.
 
 **Default model skill** (forward, 200–1,200 cfs):
 
@@ -196,10 +208,13 @@ The recalibrated skill is scored by leaving out one year from the *recalibration
 - **La Boquilla storage (`xStore`)**: slightly *worse*. It forces training to 1993+, which loses 57 years, and its signal (Oct-1 storage terciles → November runnable share 46/58/78%) seems mostly captured by current baseflow already.
 - **No recency weighting** (spec A): good at short leads but negative skill beyond 90 d. The regime has shifted (§7.1 decade table).
 - **v1 design (2007+ only)**: fine under leave-one-year-out (it learns from future years) but poor under forward chaining (≈ +0.12).
+- **ENSO (ONI)**: −0.01 to −0.03 vs its same-years baseline at every lead. For 1982–2025, the Oct-1 ONI correlates −0.01 with the November runnable share and −0.01 with Jan–Mar. After accounting for baseflow, the partial correlation is +0.04. November runnable share was 81% / 60% / 68% for La Niña / neutral / El Niño on Oct 1, with n = 5 / 31 / 8: noise. ENSO mainly moves cool-season rain, while this reach runs on the summer monsoon and managed releases.
+- **Monsoon rainfall (CHIRPS)**: −0.05 to −0.07 vs baseline, except a small, scheme-dependent gain at 90–120 d leads. The raw signal is real: November was runnable 54% / 60% / 76% after dry / middle / wet 4-month rainfall terciles, and rainfall correlates +0.22 with November and +0.31 with Jan–Mar. But it correlates +0.42 with Oct-1 baseflow. The partial correlation after baseflow is +0.02 for November and +0.17 for Jan–Mar. The river's baseflow already encodes the monsoon, and the extra input mostly adds variance. The Jan–Mar partial (+0.17) is the one thread worth pulling for long-lead winter forecasts, perhaps with a lead-specific or seasonal model.
 
 ### 5.7 Other planner views
 
-- **Upstream right now:** tiles for Presidio and the Rio Conchos at Ojinaga (3-day means), and La Boquilla storage, each ranked against the same date in other years.
+- **Upstream right now:** tiles for Presidio and the Rio Conchos at Ojinaga (3-day means), La Boquilla storage, Conchos basin rainfall (% of normal, last 4 published months), and ENSO state. Each is ranked against the same date in other years where that makes sense.
+- **Where the data comes from:** a Leaflet map (OpenStreetMap tiles) of every gauge, reservoir, trip access point, the approximate trip route and the approximate Conchos basin polygon. There are "Whole basin" / "Big Bend reach" views, and a sources table with live links (IBWC portal location pages, USGS, NWS PRST2, CHIRPS, CPC ONI, the river guides). Clicking a row flies the map to that source. Coordinates come from the IBWC portal's location summaries.
 - **Climatology:** runnable share by start date for the last 20 years vs all years since 1936, and a canvas grid of every year × start date (newest at top) colored ideal / workable / too low / too high / no data. The 2016 trip is outlined.
 - **Monthly table:** the share of years with ≥1 runnable start in each month, for all years and the last 20.
 - **Validation tables** read from `data/validation.json`, with toggles for range, scheme and season. The row in use is highlighted.
@@ -207,6 +222,7 @@ The recalibrated skill is scored by leaving out one year from the *recalibration
 
 ### 5.8 Readings as of 2026-09-30
 
+- **2026 climate context:** strong El Niño (JJA ONI +1.80). May–Aug Conchos basin rainfall was 68% of normal (4th driest of 45 years since 1982 for that date). Neither is used by the default model (§5.6).
 - **2026:** Johnson Ranch 7-day minimum is **3.5 cfs**, the **lowest of 91 years for that date**. The model gives ≤8% for any start in the next 90 days and flags that it's extrapolating. La Boquilla holds ~650 million m³, low (5th lowest of 34 years since 1993 on that date). **Watch:** on 2026-09-30 the Presidio 15-min telemetry jumped from ~2 m³/s to ~17 m³/s (~600 cfs), with the Conchos at Ojinaga also rising. It wasn't yet in the daily series or at Johnson Ranch when this was written.
 - **2016 hindcast** (as of Oct 1, 2016, with 2016 held out): early-to-mid November starts ~58–63% with the correction. Actual: the Nov 12–18 trip was runnable, near the minimum by the end.
 
@@ -275,9 +291,9 @@ All of these were tested from a scripted client.
 
 | Source | Access | Notes |
 |---|---|---|
-| ENSO ONI | `https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt` (plain text, `SEAS YR TOTAL ANOM`, 1950→) | JJA 2026 anomaly **+1.80** (strong El Niño developing). Expect a modest effect here (cool-season rain; the Conchos is monsoon-fed), but it has to be tested. |
+| ENSO ONI | `https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt` (plain text, `SEAS YR TOTAL ANOM`, 1950→) | **Now in `data/climate/oni.json`.** Tested: no gain (§5.6). |
 | NWS river gauge Presidio (PRST2) | `https://api.water.noaa.gov/nwps/v1/gauges/PRST2` and `/stageflow` | Observed stage/flow works (0.597 kcfs on 2026-09-30). **No forecast issued** (`fcst_not_current`) at test time, so don't rely on it. |
-| CHIRPS rainfall | `https://data.chc.ucsb.edu/products/CHIRPS-2.0/global_monthly/tifs/chirps-v2.0.YYYY.MM.tif.gz` (~14.6 MB each, 1981→) | Feasible as a one-time backfill: download, clip to the Conchos basin polygon, basin-average, discard. Too heavy to re-run in the daily Action; append monthly. |
+| CHIRPS rainfall | **Use the COGs:** `https://data.chc.ucsb.edu/products/CHIRPS-2.0/global_monthly/cogs/chirps-v2.0.YYYY.MM.cog` (1981→; final data lags ~3 weeks). Read a window with rasterio via `/vsicurl/` (HTTP range requests, ~5 s/month) instead of downloading 14.6 MB tifs or the 7.2 GB netCDF. The server resets connections often, so retry. | **Now in `data/climate/conchos_rain.json`** (548 months, full backfill in ~2 min with 8 threads). Tested: no gain (§5.6). |
 | ERA5 | `cds.climate.copernicus.eu` | Needs a free account/API key. 1940→. Optional. |
 | CONAGUA direct (`sih.conagua.gob.mx`, `smn.conagua.gob.mx`) | Not needed | IBWC already mirrors the Conchos reservoir series. |
 
@@ -289,8 +305,10 @@ All of these were tested from a scripted client.
 
 **Next, in rough priority order:**
 
-1. **ENSO (ONI) as a predictor.** Easy to get (§7.2), and 2026 has a strong El Niño. Test as `C`-style add-ons on A-h12 and keep only if the forward fall BSS improves beyond noise (> ~0.03).
-2. **Monsoon rainfall index.** A CHIRPS Jun–Sep basin total over the Rio Conchos (1981+). One-time backfill plus a monthly append. Test like ENSO.
+*(ENSO and monsoon rainfall were tested on 2026-09-30: no gain; see §5.6.)*
+
+1. **Seasonal model for winter leads.** Monsoon rainfall keeps a +0.17 partial correlation with Jan–Mar runnability after baseflow. A lead- or season-specific model (e.g. rain enters only for targets in Dec–Mar) might capture that without hurting fall.
+2. **A real basin boundary.** Replace the hand-drawn Conchos polygon with HydroSHEDS / CONAGUA, and consider upper-basin-only rainfall (above La Boquilla).
 3. **Forward-chained recalibration.** Fit the Platt correction for year *y* only on years < *y*, to remove the residual optimism noted in §5.5. This needs forward forecasts before 2008 (e.g. evaluate 1990–2025).
 4. **Nested selection.** The half-life and spec were picked on the same 2008–2025 data they're scored on. A nested scheme (select on years < *y*) would give an unbiased skill estimate. Expect slightly lower numbers.
 5. **Same-week layer (leads 0–3 d).** This is where Presidio/Ojinaga upstream flow and NWS rainfall forecasts should matter. Consider a separate short-lead model scored on leads 0–3.
@@ -311,7 +329,7 @@ All of these were tested from a scripted client.
 
 ## 9. Conventions
 
-- Static site, no framework, no build, no external JS. Inline SVG charts. CSS custom properties for light/dark themes (`prefers-color-scheme` plus a `data-theme` override).
+- Static site, no framework, no build, no external JS. Leaflet is vendored in `vendor/`, and only the OpenStreetMap tiles are external. Inline SVG charts, and canvas for the 90-year grid. Chart CSS is scoped to `.plot svg`: a global `svg{width:100%}` breaks Leaflet's vector layer. CSS custom properties for light/dark themes (`prefers-color-scheme` plus a `data-theme` override).
 - The data pipeline is Python standard library only, so it runs on a bare GitHub runner.
 - Commit data only when it changes. Keep `data/*.json` compact (no whitespace in the year files).
 - Parse external formats by column name/suffix, never by position.
