@@ -49,12 +49,16 @@ data/ibwc/index.json        Summary of the IBWC files (name, unit, start, end, d
 data/climate/oni.json       NOAA CPC Oceanic Niño Index: {"source","note","rows":[["DJF",1950,-1.53],...]}  (year = middle month's year)
 data/climate/conchos_rain.json  CHIRPS monthly basin-mean rainfall: {"source","region","polygon":[[lon,lat],...],"unit","months":{"1981-01":mm,...}}
 vendor/leaflet-1.9.4/       Leaflet (BSD-2) for the planner's sources map. Vendored so the page has no external JS.
+data/now.json               Live snapshot for the map popups (every 3 h): per site latest reading, 24 h-ago value, ~30 daily means;
+                              reservoirs: pct (of NAMO), storage (Mm3), inflow/release/spill (cfs), 7-day storage change
 data/validation.json        Cross-validation results for every model spec + recalibration table (written by scripts/validate.mjs)
 scripts/update_data.py      USGS pull -> data/*.json (Python stdlib only)
 scripts/update_ibwc.py      IBWC pull -> data/ibwc/*.json (Python stdlib only)
+scripts/update_now.py       Live snapshot -> data/now.json (stdlib): IBWC "Best Available" 15-min flows (m3/s -> cfs), CONAGUA reservoir series, USGS Castolon iv, NWS PRST2
 scripts/update_climate.py   ONI + CHIRPS pull -> data/climate/*.json (needs numpy + rasterio; CHIRPS read via HTTP range requests on COGs)
 scripts/validate.mjs        Node: cross-validates all specs in model.js, fits the recalibration, writes data/validation.json (~3 min)
 .github/workflows/update-data.yml   Daily 12:17 UTC: USGS + IBWC + climate pulls, commit if changed (manual "backfill" option for USGS)
+.github/workflows/now.yml           Every 3 h (:23): refresh data/now.json
 .github/workflows/validate.yml      Weekly (Mon) + on changes to model.js/validate.mjs: re-run validation, commit
 ```
 
@@ -214,6 +218,11 @@ The recalibrated skill is scored by leaving out one year from the *recalibration
 ### 5.7 Other planner views
 
 - **Upstream right now:** tiles for Presidio and the Rio Conchos at Ojinaga (3-day means), La Boquilla storage, Conchos basin rainfall (% of normal, last 4 published months), and ENSO state. Each is ranked against the same date in other years where that makes sense.
+- **Live map popups** (from `data/now.json`):
+  - *Rivers:* current cfs, 24 h change, 14-day daily sparkline (log scale), and today's rank vs the same date in the long IBWC record. Trip gauges get a trip-range badge. Each popup gives the travel time to Johnson Ranch, measured by lagged correlation of daily log-flow changes, 1990–2025: Presidio and Ojinaga peak at a 1-day lag (Ojinaga has more of the pulse arriving on day 2); Terlingua peaks the same day.
+  - *Reservoirs:* % of NAMO with a bar, storage (Mm³ and acre-ft), 7-day change, inflow / release / spill in cfs, and a plain-language state ("Filling", "Passing water through", "Drawing down", "Quiet"). La Boquilla also gets a rank vs the same date since 1993.
+  - *Map labels:* permanent value labels, toggleable. ▲▼ marks 24 h change for rivers and 7-day change for reservoirs.
+  - *Why a snapshot:* IBWC sends no CORS headers (and exports are zips), so browsers can't fetch it directly. USGS and NWS do allow CORS, but everything goes through one snapshot for consistency.
 - **Where the data comes from:** a Leaflet map (OpenStreetMap tiles) of every gauge, reservoir, trip access point, the approximate trip route and the approximate Conchos basin polygon. There are "Whole basin" / "Big Bend reach" views, and a sources table with live links (IBWC portal location pages, USGS, NWS PRST2, CHIRPS, CPC ONI, the river guides). Clicking a row flies the map to that source. Coordinates come from the IBWC portal's location summaries.
 - **Climatology:** runnable share by start date for the last 20 years vs all years since 1936, and a canvas grid of every year × start date (newest at top) colored ideal / workable / too low / too high / no data. The 2016 trip is outlined.
 - **Monthly table:** the share of years with ≥1 runnable start in each month, for all years and the last 20.

@@ -80,11 +80,29 @@ details{margin-top:8px}
 summary{cursor:pointer;color:var(--ink2)}
 .src{color:var(--muted);font-size:12px;margin-top:24px}
 .src a{color:var(--ink2)}
-#map{height:500px;border-radius:10px;border:1px solid var(--grid);background:var(--bg)}
+#map{height:580px;border-radius:10px;border:1px solid var(--grid);background:var(--bg)}
 @media (max-width:640px){#map{height:380px}}
 .leaflet-popup-content{font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
 .leaflet-popup-content b{font-size:13.5px}
+.pop{min-width:250px;max-width:290px}
+.pop .big{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.15;margin:4px 0 2px}
+.pop .chg{font-size:12px;font-weight:600;margin-left:6px}
+.pop .up{color:#1a7f4b}.pop .down{color:#b4461f}
+.pop .kv{display:flex;justify-content:space-between;gap:10px;font-variant-numeric:tabular-nums;margin-top:2px}
+.pop .kv span:first-child{color:#666}
+.pop .badge{display:inline-block;font-size:11.5px;font-weight:650;padding:1px 8px;border-radius:999px;margin:2px 0}
+.pop .note{font-size:11.5px;color:#666;margin-top:6px}
+.pop .say{margin-top:6px;padding:6px 8px;background:#f4f3ef;border-radius:6px;font-size:12.5px}
+.pop .bar{height:8px;background:#e6e5e0;border-radius:4px;overflow:hidden;margin:4px 0 2px}.pop .bar i{display:block;height:100%;background:#1baf7a}
+.pop svg.spark{display:block;width:100%;height:46px;margin-top:6px}
+.livelab{background:rgba(255,255,255,.92);border:1px solid #c9c8c2;border-radius:6px;padding:1px 6px;font:600 11.5px system-ui,sans-serif;color:#222;box-shadow:none;white-space:nowrap}
+.livelab::before{display:none}
 .srcrow{cursor:pointer}
+#srcTable td.stop{vertical-align:top;padding-top:7px;padding-bottom:7px}
+#srcTable td:nth-child(2){white-space:nowrap}
+.upc{color:#1a7f4b;font-size:12px}.dnc{color:#b4461f;font-size:12px}
+:root[data-theme="dark"] .upc{color:#4cc38a}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .upc{color:#4cc38a}:root:not([data-theme="light"]) .dnc{color:#f08a5d}}
 .srcrow:hover td{background:var(--chip)}
 .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--axis);color:var(--ink2);white-space:nowrap}
 .tag.model{border-color:var(--model);color:var(--model);font-weight:600}
@@ -132,11 +150,15 @@ summary{cursor:pointer;color:var(--ink2)}
   <div class="card">
     <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center">
       <div class="legend" id="mapLegend" style="margin:0"></div>
-      <span class="seg" id="mapView"><button type="button" data-v="all" aria-pressed="true">Whole basin</button><button type="button" data-v="reach">Big Bend reach</button></span>
+      <span style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label style="display:inline-flex;gap:6px;align-items:center;font-size:13px;color:var(--ink2);cursor:pointer"><input type="checkbox" id="liveLab" checked> Live values on map</label>
+        <span class="seg" id="mapView"><button type="button" data-v="all" aria-pressed="true">Whole basin</button><button type="button" data-v="reach">Big Bend reach</button></span>
+      </span>
     </div>
     <div style="height:8px"></div>
     <div id="map" role="region" aria-label="Map of data sources"></div>
-    <p class="note" id="mapNote" style="margin:6px 2px 0">The basin outline is an approximation drawn for the rainfall index, and the trip route is straight segments between access points, not the river's actual path.</p>
+    <p class="note" id="liveNote" style="margin:6px 2px 0"></p>
+    <p class="note" id="mapNote" style="margin:2px 2px 0">The basin outline is an approximation drawn for the rainfall index, and the trip route is straight segments between access points, not the river's actual path.</p>
   </div>
   <div class="scroll" style="margin-top:10px"><table id="srcTable"></table></div>
 
@@ -281,7 +303,8 @@ const hideTip=()=>tip.style.display='none';
 
 // ---------- data ----------
 const J=u=>fetch(u,{cache:'no-cache'}).then(r=>r.ok?r.json():null);
-const [jr,pres,lb,ojin,val,oni,rain]=await Promise.all(['data/ibwc/johnson_ranch.json','data/ibwc/presidio.json','data/ibwc/la_boquilla.json','data/ibwc/conchos_ojinaga.json','data/validation.json','data/climate/oni.json','data/climate/conchos_rain.json'].map(J));
+const [jr,pres,lb,ojin,val,oni,rain,terl,NOW]=await Promise.all(['data/ibwc/johnson_ranch.json','data/ibwc/presidio.json','data/ibwc/la_boquilla.json','data/ibwc/conchos_ojinaga.json','data/validation.json','data/climate/oni.json','data/climate/conchos_rain.json','data/ibwc/terlingua.json','data/now.json'].map(J));
+const TER=terl?M.series(terl):null;
 const D=M.bundle({target:jr,presidio:pres,storage:lb,oni,rain});
 const OJ=ojin?M.series(ojin):null;
 const FIRST=D.T.start, LAST=D.T.end;
@@ -375,7 +398,7 @@ function upstream(){
   const mean3=(S,d)=>{let s=0,n=0;for(let i=0;i<3;i++){const v=S.get(d-i);if(v!==undefined){s+=v;n++}}return n?s/n:null};
   const tiles=[];
   const pr=pctRank(dd=>mean3(D.P,dd),d,D.years,yr);
-  tiles.push(['Presidio, below the Conchos',pr?cfs(pr.x)+' cfs':'—',pr?`3-day mean to ${fmtD(d)}. ${rankTxt(pr,'years on this date')} It reaches Johnson Ranch in roughly 1–3 days.`:'']);
+  tiles.push(['Presidio, below the Conchos',pr?cfs(pr.x)+' cfs':'—',pr?`3-day mean to ${fmtD(d)}. ${rankTxt(pr,'years on this date')} It reaches Johnson Ranch in about 1 day.`:'']);
   if(OJ){const oj=pctRank(dd=>mean3(OJ,dd),d,D.years.filter(y=>y>=1955),yr);tiles.push(['Rio Conchos near Ojinaga',oj?cfs(oj.x)+' cfs':'—',oj?`3-day mean. ${rankTxt(oj,'years (1955+) on this date')}`:''])}
   const sv=M.xStore(D.R,d);if(sv!=null){const r=pctRank(dd=>{const v=M.xStore(D.R,dd);return v==null?null:v*1000},d,D.years.filter(y=>y>=1993),yr);
     tiles.push(['La Boquilla storage',Math.round(sv*1000).toLocaleString()+' million m³',r?`Largest Conchos reservoir. ${rankTxt(r,'years (1993+) on this date')} The record high is about 2,940.`:''])}
@@ -459,9 +482,10 @@ const dms=(d,m,s)=>(d<0?-1:1)*(Math.abs(d)+m/60+s/3600);
 const SRC=[
   {k:'jr',name:'Rio Grande at Johnson Ranch nr Castolon',id:'IBWC 08375000',lat:dms(29,2,6),lon:dms(-103,23,27),kind:'model',span:'1936 →',role:'Model target and its only default predictor (7-day minimum baseflow). Tracks the USGS Castolon gauge closely.',url:IB('08375000')},
   {k:'cas',name:'Rio Grande near Castolon',id:'USGS 08374550',lat:dms(29,8,16),lon:dms(-103,31,29),kind:'chart',span:'2007 →',role:'Shown on the Flow chart tab (plus the USGS historical-normal band). This was the v1 model target.',url:'https://waterdata.usgs.gov/monitoring-location/USGS-08374550/'},
-  {k:'pre',name:'Rio Grande below Rio Conchos nr Presidio',id:'IBWC 08374200',lat:dms(29,31,12),lon:dms(-104,17,11),kind:'context',span:'1900 →',role:'Upstream flow, 1–3 days ahead of Johnson Ranch. Tested as a model input: no gain.',url:IB('08374200')},
+  {k:'pre',name:'Rio Grande below Rio Conchos nr Presidio',id:'IBWC 08374200',lat:dms(29,31,12),lon:dms(-104,17,11),kind:'context',span:'1900 →',role:'Upstream flow, about 1 day ahead of Johnson Ranch. Tested as a model input: no gain.',url:IB('08374200')},
   {k:'prst2',name:'NWS river gauge, Presidio (PRST2)',id:'NOAA NWPS PRST2',lat:29.56,lon:-104.37,kind:'context',span:'live',role:'The National Weather Service gauge page, with forecasts when issued. Check it in the final week before a trip.',url:'https://water.noaa.gov/gauges/prst2'},
   {k:'oji',name:'Rio Conchos near Ojinaga',id:'IBWC 08373000',lat:dms(29,34,56),lon:dms(-104,25,47),kind:'context',span:'1954 →',role:'The Rio Conchos just above its confluence with the Rio Grande, where most of the reach\'s water comes from.',url:IB('08373000')},
+  {k:'above',name:'Rio Grande above Rio Conchos nr Presidio',id:'IBWC 08371500',lat:dms(29,36,13),lon:dms(-104,27,6),kind:'context',span:'1900 →',role:'The upper Rio Grande just before the Conchos joins. Usually close to dry (the "Forgotten River"): almost all the water in Big Bend comes from Mexico.',url:IB('08371500')},
   {k:'ter',name:'Terlingua Creek near Terlingua',id:'IBWC 08374500',lat:dms(29,11,59),lon:dms(-103,36,20),kind:'context',span:'1932 →',role:'Flashy tributary entering just above Castolon. The source of many storm spikes at Castolon and Johnson Ranch. Collected, not used.',url:IB('08374500')},
   {k:'lbq',name:'La Boquilla Reservoir',id:'CONAGUA via IBWC',lat:dms(27,32,21),lon:dms(-105,23,30),kind:'reservoir',span:'1993 →',role:'Largest reservoir on the Conchos (storage). Tested as a model input: slightly worse.',url:IB('08-LBQCH-CONAGUA')},
   {k:'fim',name:'Francisco I. Madero Reservoir',id:'CONAGUA via IBWC',lat:dms(28,9,55),lon:dms(-105,37,30),kind:'reservoir',span:'2015 →',role:'Rio San Pedro, a Conchos tributary. Available on the IBWC portal. Not used.',url:IB('08-FIMCH-CONAGUA')},
@@ -474,11 +498,91 @@ const GLOBAL=[
   {name:'River guide thresholds (200 / 300–1,000 / 1,200 cfs)',id:'Southwest Paddler',kind:'model',span:'—',role:'Where the flow range comes from: guides for Colorado Canyon and Santa Elena Canyon.',url:'https://southwestpaddler.com/docs/riogrande2.html'},
 ];
 const KIND={model:['Model input','--model'],context:['Context','--muted'],reservoir:['Reservoir (context)','--res'],chart:['Flow chart','--ink2'],trip:['Trip access point','--low']};
+// ---------- live popups ----------
+const LIVE=NOW&&NOW.sites||{};
+const HIST={jr:D.T,pre:D.P,oji:OJ,ter:TER};
+const TRAVEL={pre:'Water here reaches Johnson Ranch in about 1 day (most of a pulse within 2).',oji:'The Conchos just above the confluence. It reaches Johnson Ranch in about 1–2 days.',ter:'Joins the Rio Grande just above Castolon, so it shows up at Castolon and Johnson Ranch the same day.',above:'The upper Rio Grande before the Conchos joins. Near zero is normal here.',cas:'At the Santa Elena take-out. Johnson Ranch is a few miles downstream.',jr:'The model\'s gauge, a few miles below Castolon.'};
+const fmtT=t=>{if(!t)return '';const d=new Date(t);return isNaN(d)?t:d.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})};
+const n0=v=>v==null?'—':Math.round(v).toLocaleString();
+function spark(pts,log,unit){ // pts [[date, v]]
+  const v=pts.filter(p=>p[1]!=null);if(v.length<2)return '';
+  const f=log?(x=>Math.log10(Math.max(x,1))):(x=>x);const ys=v.map(p=>f(p[1]));let lo=Math.min(...ys),hi=Math.max(...ys);if(hi-lo<1e-9){hi+=1;lo-=1}
+  const W=240,H=46,px=i=>4+i*(W-8)/(v.length-1),py=y=>H-6-(y-lo)/(hi-lo)*(H-14);
+  const d=v.map((p,i)=>(i?'L':'M')+px(i).toFixed(1)+','+py(ys[i]).toFixed(1)).join('');
+  const mx=v.reduce((a,p)=>p[1]>a[1]?p:a),mn=v.reduce((a,p)=>p[1]<a[1]?p:a);
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${d}" fill="none" stroke="#2a78d6" stroke-width="1.8" vector-effect="non-scaling-stroke"/><circle cx="${px(v.length-1)}" cy="${py(ys[ys.length-1])}" r="3" fill="#2a78d6"/></svg>`+
+    `<div class="kv" style="font-size:11px"><span>${fmtD(M.isoToDn(v[0][0]))} → ${fmtD(M.isoToDn(v[v.length-1][0]))}, daily${log?' (log scale)':''}</span><span>range ${n0(mn[1])}–${n0(mx[1])}${unit?' '+unit:''}</span></div>`;
+}
+function change(now,prev){if(now==null||prev==null)return '';const dlt=now-prev,rel=prev>0?dlt/prev:(dlt>0?1:0);
+  if(Math.abs(dlt)<5||Math.abs(rel)<0.1)return '<span class="chg" style="color:#666">steady vs 24 h ago</span>';
+  return `<span class="chg ${dlt>0?'up':'down'}">${dlt>0?'▲':'▼'} ${dlt>0?'+':''}${n0(dlt)} in 24 h</span>`}
+function histRank(k){const S=HIST[k],L=LIVE[k];if(!S||!L||!L.daily||!L.daily.length)return '';
+  const last=L.daily[L.daily.length-1];const d=M.isoToDn(last[0]),y=M.yearOf(d);
+  const o=D.years.filter(yy=>yy!==y).map(yy=>S.get(M.sameDay(yy,d))).filter(v=>v!==undefined);if(o.length<10)return '';
+  const b=o.filter(v=>v<last[1]).length;
+  return `<div class="note" style="margin-top:4px;color:#333">For ${fmtD(d)}: ${b===0?`<b>lowest</b> of ${o.length+1} years on record`:b===o.length?`<b>highest</b> of ${o.length+1} years on record`:`higher than <b>${b} of ${o.length}</b> past years`}.</div>`}
+function riverPop(x){
+  const L=LIVE[x.k];let h=`<div class="pop"><b>${x.name}</b><br><span style="color:#666">${x.id}</span>`;
+  if(!L)return h+`<div class="note">No live reading in the current snapshot.</div><div class="note">${x.role}</div><a href="${x.url}" target="_blank" rel="noopener">Open live data →</a></div>`;
+  h+=`<div class="big">${n0(L.cfs)} cfs${change(L.cfs,L.cfs_24h_ago)}</div>`;
+  if(x.k==='jr'||x.k==='cas'){const v=L.cfs;const [txt,bg,fg]=v<st.lo?['Below trip minimum ('+st.lo+')','#fde7dc','#9a3412']:v>st.hi?['Above trip maximum ('+st.hi.toLocaleString()+')','#e9e5fb','#4a3aa7']:['Inside trip range ('+st.lo+'–'+st.hi.toLocaleString()+')','#dcebfb','#1d4f91'];
+    h+=`<span class="badge" style="background:${bg};color:${fg}">${txt}</span>`}
+  if(x.k==='prst2'&&L.stage_ft!=null)h+=`<div class="kv"><span>Stage</span><span>${L.stage_ft.toFixed(2)} ft</span></div><div class="kv"><span>Flood category</span><span>${(L.flood||'—').replace(/_/g,' ')}</span></div><div class="kv"><span>NWS forecast</span><span>${L.forecast?n0(L.forecast.cfs)+' cfs '+fmtT(L.forecast.t):'none issued'}</span></div>`;
+  h+=histRank(x.k);
+  if(L.daily&&L.daily.length)h+=spark(L.daily.slice(-14),true,'cfs');
+  if(TRAVEL[x.k])h+=`<div class="note">${TRAVEL[x.k]}</div>`;
+  h+=`<div class="note">Latest reading ${fmtT(L.t)}${L.stale?' (from an older snapshot; this refresh failed)':''} · provisional</div><a href="${x.url}" target="_blank" rel="noopener">Open live data →</a></div>`;
+  return h;
+}
+function resPop(x){
+  const L=LIVE[x.k];let h=`<div class="pop"><b>${x.name}</b><br><span style="color:#666">${x.id}</span>`;
+  if(!L||!L.pct)return h+`<div class="note">No live reading in the current snapshot.</div><a href="${x.url}" target="_blank" rel="noopener">Open live data →</a></div>`;
+  const pct=L.pct.v,inf=L.inflow?.v,rel=L.release?.v,sp=L.spill?.v,ch=L.storage_7d_change;
+  h+=`<div class="big">${pct.toFixed(1)}% full</div><div class="bar"><i style="width:${Math.min(100,pct)}%"></i></div><div class="note" style="margin-top:0">of the normal maximum operating level (NAMO)</div>`;
+  if(L.storage)h+=`<div class="kv"><span>Storage</span><span>${n0(L.storage.v)} million m³ (${n0(L.storage.v*810.7)} acre-ft)</span></div>`;
+  if(ch!=null)h+=`<div class="kv"><span>7-day change</span><span class="${ch>0?'up':ch<0?'down':''}">${ch>0?'+':''}${n0(ch)} million m³</span></div>`;
+  h+=`<div class="kv"><span>Inflow</span><span>${n0(inf)} cfs</span></div><div class="kv"><span>Release downstream</span><span>${n0(rel)} cfs</span></div><div class="kv"><span>Spill</span><span>${n0(sp)} cfs</span></div>`;
+  if(x.k==='lbq'&&D.R){const d=M.isoToDn(L.storage.t.slice(0,10)),y=M.yearOf(d);const o=D.years.filter(yy=>yy>=1993&&yy!==y).map(yy=>D.R.get(M.sameDay(yy,d))).filter(v=>v!==undefined);
+    if(o.length>5){const b=o.filter(v=>v<L.storage.v).length;h+=`<div class="note" style="margin-top:4px;color:#333">For ${fmtD(d)}: ${b===0?'<b>lowest</b> since 1993':`more than <b>${b} of ${o.length}</b> years since 1993`}.</div>`}}
+  let say='';
+  if(inf!=null&&rel!=null){const out=(rel||0)+(sp||0);
+    if(inf>50&&out<inf*0.2)say=`<b>Filling.</b> Almost all inflow is being stored, not passed downstream.`;
+    else if(out>inf*1.2&&out>50)say=`<b>Drawing down.</b> Releasing more than is flowing in.`;
+    else if(out>50)say=`<b>Passing water through.</b> ${n0(out)} cfs is heading downstream.`;
+    else say=`<b>Quiet.</b> Little coming in or going out.`;
+    if(sp>0)say+=` <b>Spilling</b> ${n0(sp)} cfs.`}
+  if(say)h+=`<div class="say">${say}</div>`;
+  if(L.storage_daily&&L.storage_daily.length)h+=spark(L.storage_daily,false,'Mm³');
+  h+=`<div class="note">Released water is partly diverted for irrigation before it reaches the Rio Grande, and takes several days to get to Ojinaga.</div>`;
+  h+=`<div class="note">Daily CONAGUA values as of ${fmtT(L.pct.t)} · provisional</div><a href="${x.url}" target="_blank" rel="noopener">Open live data →</a></div>`;
+  return h;
+}
+function liveCells(x){const L=LIVE[x.k];if(!L)return ['<span style="color:var(--muted)">—</span>',''];
+  if(x.kind==='reservoir'){if(!L.pct)return ['—',''];const ch=L.storage_7d_change;
+    const now=`<b>${L.pct.v.toFixed(1)}% full</b><br><span style="color:var(--ink2)">in ${n0(L.inflow?.v)} · out ${n0((L.release?.v||0)+(L.spill?.v||0))} cfs</span>`;
+    let rk='';if(x.k==='lbq'&&D.R&&L.storage){const d=M.isoToDn(L.storage.t.slice(0,10)),y=M.yearOf(d);const o=D.years.filter(yy=>yy>=1993&&yy!==y).map(yy=>D.R.get(M.sameDay(yy,d))).filter(v=>v!==undefined);const b=o.filter(v=>v<L.storage.v).length;rk=b===0?'lowest since 1993':`above ${b} of ${o.length} yrs`}
+    return [now+(ch!=null?`<br><span class="${ch>0?'upc':ch<0?'dnc':''}">${ch>0?'▲ +':ch<0?'▼ ':''}${n0(ch)} Mm³ / 7 d</span>`:''),rk]}
+  if(L.cfs==null)return ['—',''];
+  const dlt=L.cfs_24h_ago!=null?L.cfs-L.cfs_24h_ago:null,big=dlt!=null&&Math.abs(dlt)>=Math.max(5,0.1*(L.cfs_24h_ago||0));
+  let now=`<b>${n0(L.cfs)} cfs</b>`+(big?`<br><span class="${dlt>0?'upc':'dnc'}">${dlt>0?'▲ +':'▼ '}${n0(dlt)} / 24 h</span>`:dlt!=null?'<br><span style="color:var(--muted)">steady</span>':'');
+  if(x.k==='jr'||x.k==='cas')now+=`<br><span style="color:var(--ink2)">${L.cfs<st.lo?'below trip min':L.cfs>st.hi?'above trip max':'in trip range'}</span>`;
+  let rk='';const S=HIST[x.k];if(S&&L.daily&&L.daily.length){const last=L.daily[L.daily.length-1];const d=M.isoToDn(last[0]),y=M.yearOf(d);const o=D.years.filter(yy=>yy!==y).map(yy=>S.get(M.sameDay(yy,d))).filter(v=>v!==undefined);
+    if(o.length>=10){const b=o.filter(v=>v<last[1]).length;rk=b===0?'lowest on record':b===o.length?'highest on record':`above ${b} of ${o.length} yrs`}}
+  return [now,rk]}
+const livePop=x=>x.kind==='reservoir'?resPop(x):riverPop(x);
+function liveLabel(x){const L=LIVE[x.k];if(!L)return null;
+  if(x.kind==='reservoir'){if(!L.pct)return null;const ch=L.storage_7d_change;return `${Math.round(L.pct.v)}% full${ch>0.5?' ▲':ch<-0.5?' ▼':''}`}
+  if(L.cfs==null)return null;const up=L.cfs_24h_ago!=null&&L.cfs-L.cfs_24h_ago>Math.max(5,0.1*L.cfs_24h_ago),dn=L.cfs_24h_ago!=null&&L.cfs_24h_ago-L.cfs>Math.max(5,0.1*L.cfs_24h_ago);
+  return `${n0(L.cfs)} cfs${up?' ▲':dn?' ▼':''}`}
+
 function drawSources(){
   const tag=k=>`<span class="tag ${k==='model'?'model':''}">${KIND[k][0]}</span>`;
-  let h='<tr><th>Source</th><th>ID</th><th>Record</th><th>Use</th><th style="text-align:left">Role</th></tr>';
-  SRC.forEach((x,i)=>h+=`<tr class="srcrow" data-i="${i}"><td><i class="dotk" style="background:var(${KIND[x.kind][1]})"></i><a href="${x.url}" target="_blank" rel="noopener">${x.name}</a></td><td>${x.id}</td><td>${x.span}</td><td>${tag(x.kind==='reservoir'?'context':x.kind==='chart'?'context':x.kind)}</td><td style="text-align:left;white-space:normal;color:var(--ink2)">${x.role}</td></tr>`);
-  GLOBAL.forEach(x=>h+=`<tr><td><i class="dotk" style="background:transparent;border-color:var(--axis)"></i><a href="${x.url}" target="_blank" rel="noopener">${x.name}</a></td><td>${x.id}</td><td>${x.span}</td><td>${tag(x.kind)}</td><td style="text-align:left;white-space:normal;color:var(--ink2)">${x.role}</td></tr>`);
+  let h='<tr><th>Source</th><th>Now</th><th>vs this date</th><th style="text-align:left">Role</th></tr>';
+  const srcCell=(x,dot)=>`<td class="stop" style="white-space:normal;min-width:190px"><i class="dotk" style="${dot}"></i><a href="${x.url}" target="_blank" rel="noopener">${x.name}</a><br><span style="color:var(--muted);font-size:11.5px;padding-left:16px">${x.id} · ${x.span}</span></td>`;
+  SRC.forEach((x,i)=>{const [nw,rk]=liveCells(x);h+=`<tr class="srcrow" data-i="${i}">${srcCell(x,`background:var(${KIND[x.kind][1]})`)}<td class="stop">${nw}</td><td class="stop" style="color:var(--ink2);white-space:normal">${rk}</td><td class="stop" style="text-align:left;white-space:normal;color:var(--ink2);min-width:260px">${tag(x.kind==='reservoir'||x.kind==='chart'?'context':x.kind)} ${x.role}</td></tr>`});
+  const clim={'Rio Conchos basin rainfall':()=>{const v=D.aux.rain&&D.aux.rain(LAST);return v==null?'—':`<b>${Math.round(Math.exp(v)*100)}% of normal</b><br><span style="color:var(--ink2)">last 4 published months</span>`},
+    'El Niño / La Niña: Oceanic Niño Index':()=>{const v=D.aux.oni&&D.aux.oni(LAST);return v==null?'—':`<b>${v>0?'+':''}${v.toFixed(2)} °C</b><br><span style="color:var(--ink2)">${v>=1.5?'strong El Niño':v>=0.5?'El Niño':v<=-0.5?'La Niña':'neutral'}</span>`}};
+  GLOBAL.forEach(x=>h+=`<tr>${srcCell(x,'background:transparent;border-color:var(--axis)')}<td class="stop">${clim[x.name]?clim[x.name]():''}</td><td class="stop"></td><td class="stop" style="text-align:left;white-space:normal;color:var(--ink2);min-width:260px">${tag(x.kind)} ${x.role}</td></tr>`);
   $('srcTable').innerHTML=h;
   $('mapLegend').innerHTML=['model','context','reservoir','chart','trip'].map(k=>`<span><i class="dotk" style="background:var(${KIND[k][1]})"></i>${KIND[k][0]}</span>`).join('')+'<span><i class="sw" style="height:0;border-top:2px dashed var(--ink2)"></i>Rio Conchos basin (approx.)</span><span><i class="sw" style="background:var(--low)"></i>Trip route (approx.)</span>';
   if(!window.L){$('map').innerHTML='<p class="note" style="padding:12px">The map library didn\'t load. The table below has every source and link.</p>';return}
@@ -488,14 +592,22 @@ function drawSources(){
   if(basin)L.polygon(basin,{color:css('--ink2'),weight:1.5,dashArray:'6 5',fillColor:css('--model'),fillOpacity:.06}).addTo(map).bindPopup('<b>Rio Conchos basin (approximate)</b><br>The area averaged for the CHIRPS rainfall index. Drawn by hand from the basin\'s known extent; see scripts/update_climate.py.');
   L.polyline(TRIP.map(t=>[t.lat,t.lon]),{color:css('--low'),weight:4,opacity:.85}).addTo(map).bindPopup('<b>Trip reach (approximate)</b><br>Colorado Canyon (Redford → Lajitas, ~34 mi) and Santa Elena Canyon (Lajitas → take-out, ~22 mi).');
   TRIP.forEach(t=>L.circleMarker([t.lat,t.lon],{radius:5,color:css('--surface'),weight:1.5,fillColor:css('--low'),fillOpacity:1}).addTo(map).bindTooltip(t.name));
-  const mk=SRC.map(x=>L.circleMarker([x.lat,x.lon],{radius:x.kind==='model'?9:7,color:css('--surface'),weight:2,fillColor:css(KIND[x.kind][1])||'#888',fillOpacity:1})
-    .addTo(map).bindPopup(`<b>${x.name}</b><br>${x.id} · record ${x.span}<br>${x.role}<br><a href="${x.url}" target="_blank" rel="noopener">Open live data →</a>`).bindTooltip(x.name));
+  const labels=L.layerGroup();
+  const mk=SRC.map(x=>{const m=L.circleMarker([x.lat,x.lon],{radius:x.kind==='model'?9:7,color:css('--surface'),weight:2,fillColor:css(KIND[x.kind][1])||'#888',fillOpacity:1})
+    .addTo(map).bindPopup(()=>livePop(x),{maxWidth:310,autoPanPaddingTopLeft:[10,10],autoPanPaddingBottomRight:[10,10]}).bindTooltip(x.name);
+    const dir={above:'top',oji:'left',prst2:'right',pre:'bottom',ter:'left',cas:'top',jr:'right'}[x.k]||'right';
+    const off={top:[0,-8],bottom:[0,8],left:[-8,0],right:[8,0]}[dir];
+    const t=liveLabel(x);if(t)labels.addLayer(L.tooltip({permanent:true,direction:dir,offset:off,className:'livelab',interactive:false}).setLatLng([x.lat,x.lon]).setContent(t));
+    return m});
+  labels.addTo(map);
+  $('liveLab').onchange=e=>{if(e.target.checked)labels.addTo(map);else map.removeLayer(labels)};
+  if(NOW){const age=(Date.now()-Date.parse(NOW.generated.replace('Z',':00Z')))/36e5;$('liveNote').textContent=`Live values: snapshot taken ${fmtT(NOW.generated.replace('Z',':00Z'))}${age>12?' (older than usual; the refresh may be failing)':''}, refreshed every 3 hours. Click a marker for details. ▲▼ = change over the last 24 hours (reservoirs: last 7 days).`}
   const all=[...SRC.map(x=>[x.lat,x.lon]),...TRIP.map(t=>[t.lat,t.lon]),...(basin||[])];
   map.fitBounds(all,{padding:[20,20]});
   const reach=[...SRC.filter(x=>['jr','cas','pre','prst2','oji','ter'].includes(x.k)).map(x=>[x.lat,x.lon]),...TRIP.map(t=>[t.lat,t.lon])];
   document.querySelectorAll('#mapView button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#mapView button').forEach(x=>x.setAttribute('aria-pressed',x===b));
     map.flyToBounds(b.dataset.v==='reach'?reach:all,{padding:[30,30],duration:.8})});
-  document.querySelectorAll('.srcrow').forEach(r=>r.addEventListener('click',ev=>{if(ev.target.tagName==='A')return;const i=+r.dataset.i;map.flyTo([SRC[i].lat,SRC[i].lon],10,{duration:.8});mk[i].openPopup();$('map').scrollIntoView({behavior:'smooth',block:'center'})}));
+  document.querySelectorAll('.srcrow').forEach(r=>r.addEventListener('click',ev=>{if(ev.target.tagName==='A')return;const i=+r.dataset.i;map.closePopup();map.once('moveend',()=>mk[i].openPopup());map.flyTo([SRC[i].lat,SRC[i].lon],10,{duration:.8});$('map').scrollIntoView({behavior:'smooth',block:'center'})}));
 }
 
 function update(asofOnly){syncInputs();writeHash();const pts=drawForecast();headline(pts);upstream();drawValidation();if(!asofOnly)drawClim()}

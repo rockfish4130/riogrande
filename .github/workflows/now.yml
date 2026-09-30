@@ -1,0 +1,40 @@
+name: Live snapshot
+
+# Refreshes data/now.json (latest gauge flows + reservoir status for the planner map popups).
+# IBWC doesn't allow browsers to fetch its data directly (no CORS), so the snapshot is
+# pulled here and committed; the page reads it from the repo.
+on:
+  schedule:
+    - cron: "23 */3 * * *"   # every 3 hours
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Pull live readings
+        run: python scripts/update_now.py
+      - name: Commit if changed
+        run: |
+          git add data/now.json
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Live snapshot $(jq -r .generated data/now.json)"
+          git pull --rebase origin main
+          git push
