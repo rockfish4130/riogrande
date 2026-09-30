@@ -115,6 +115,59 @@ def update_year(year, today):
     return changed
 
 
+STAT_API = ("https://waterservices.usgs.gov/nwis/stat/?format=rdb&sites={site}"
+            "&parameterCd={param}&statReportType=daily&statTypeCd=all")
+STAT_FIELDS = ["mean", "p05", "p10", "p25", "p50", "p75", "p90", "p95", "min", "max"]
+
+
+def update_stats():
+    """USGS daily statistics: for each calendar day, the mean and percentiles
+    over the approved period of record. Written to data/stats.json as
+    {"begin": yr, "end": yr, "fields": [...], "rows": [["MM-DD", ...], ...]}."""
+    url = STAT_API.format(site=SITE, param=PARAM)
+    print(f"stats: {url}")
+    lines = [l for l in fetch(url).splitlines() if l and not l.startswith("#")]
+    if len(lines) < 3:
+        print("  no stats returned")
+        return False
+    header = lines[0].split("\t")
+    print(f"  columns: {header}")
+    idx = {n: i for i, n in enumerate(header)}
+    need = ["month_nu", "day_nu"] + [f"{f}_va" for f in STAT_FIELDS]
+    missing = [n for n in need if n not in idx]
+    if missing:
+        print(f"  missing columns {missing}; keeping whatever is available")
+
+    def num(parts, name):
+        i = idx.get(name)
+        if i is None or i >= len(parts) or parts[i] == "":
+            return None
+        try:
+            return clean(float(parts[i]))
+        except ValueError:
+            return None
+
+    rows, begin, end = [], None, None
+    for line in lines[2:]:
+        parts = line.split("\t")
+        if parts[0] != "USGS":
+            continue
+        md = f"{int(parts[idx['month_nu']]):02d}-{int(parts[idx['day_nu']]):02d}"
+        rows.append([md] + [num(parts, f"{f}_va") for f in STAT_FIELDS])
+        b, e = num(parts, "begin_yr"), num(parts, "end_yr")
+        begin = b if begin is None or (b is not None and b < begin) else begin
+        end = e if end is None or (e is not None and e > end) else end
+    rows.sort()
+    path = DATA / "stats.json"
+    text = json.dumps({"begin": begin, "end": end, "fields": STAT_FIELDS, "rows": rows},
+                      separators=(",", ":")) + "\n"
+    changed = not path.exists() or path.read_text() != text
+    if changed:
+        path.write_text(text)
+    print(f"  {len(rows)} days, record {begin}-{end}{'' if changed else ' (unchanged)'}")
+    return changed
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--all", action="store_true", help=f"backfill every year since {FIRST_YEAR}")
@@ -134,6 +187,11 @@ def main():
     for y in years:
         changed |= bool(update_year(y, today))
         time.sleep(1)  # be polite to the API
+
+    try:
+        changed |= update_stats()
+    except Exception as e:  # stats are optional; never block the daily data
+        print(f"stats failed: {e}", file=sys.stderr)
 
     have = sorted(int(p.stem) for p in DATA.glob("[0-9][0-9][0-9][0-9].json"))
     latest = json.loads((DATA / f"{have[-1]}.json").read_text())["rows"][-1][0] if have else None
