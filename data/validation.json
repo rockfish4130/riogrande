@@ -1,5 +1,5 @@
 {
- "generated": "2026-09-30T22:35:29.616Z",
+ "generated": "2026-09-30T22:42:38.258Z",
  "target": "johnson_ranch",
  "evalYears": [
   2008,
@@ -10178,5 +10178,5 @@
   "rule": "AM-h12 must beat A-h12 by > 0.02",
   "passes": true
  },
- "seconds": 332
+ "seconds": 340
 }
