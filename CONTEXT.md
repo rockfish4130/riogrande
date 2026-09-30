@@ -1,6 +1,6 @@
 # Rio Grande / Big Bend flow project: full context
 
-> **What this file is.** A complete technical handoff for this repo, written so you can paste it into an AI coding assistant (or read it yourself) and keep building. It covers what exists, how it works, every data source and its traps, the model's exact specification and validation results, and a prioritized roadmap based on data-access work done on 2026-09-30.
+> **What this file is.** A complete technical handoff for this repo, written so you can paste it into an AI coding assistant (or read it yourself) and keep building. It covers what exists, how it works, every data source and its traps, the model's exact specification and validation results, what was tried and didn't work, and a prioritized roadmap. Last major update: 2026-09-30 (planner model v2).
 >
 > **Canonical copy:** <https://github.com/rockfish4130/riogrande/blob/main/CONTEXT.md>. Fork the repo and go in your own direction; everything is static HTML plus a stdlib-only Python script.
 
@@ -13,7 +13,7 @@ A small static website that answers one practical question:
 **"When is there enough water, but not too much, to canoe the Rio Grande from Colorado Canyon (Big Bend Ranch State Park) through Santa Elena Canyon (Big Bend National Park), roughly a week-long trip?"**
 
 - **Flow chart** (`index.html`): daily discharge near Castolon, overlaying any years 2007–present, with an optional "historical normal" band.
-- **Trip planner** (`planner.html`): a statistical model giving the probability that a trip starting on a given date stays within a target flow range every day, plus a climatology view and live cross-validation.
+- **Trip planner** (`planner.html` + `model.js`): a statistical model giving the probability that a trip starting on a given date stays within a target flow range every day. It's trained on 90 years of daily flow at Johnson Ranch and weighted toward recent years, with a calibration correction, validation tables, a climatology view comparing all years to the last 20, and upstream conditions.
 
 Live site: <https://rockfish4130.github.io/riogrande/> · Planner: <https://rockfish4130.github.io/riogrande/planner.html>
 
@@ -36,22 +36,28 @@ A reference trip that anchors intuition: put in near Colorado Canyon **Nov 12, 2
 ## 2. Repo map
 
 ```
-index.html                  Flow chart page (vanilla JS + inline SVG, no libraries)
-planner.html                Trip planner page (model runs in the browser, no libraries)
+index.html                  Flow chart page (vanilla JS + inline SVG, no libraries) - USGS Castolon data
+planner.html                Trip planner page (loads model.js; everything computed in the browser)
+model.js                    THE model (UMD: window.RGModel in the browser, require() in Node). Single source of truth.
 CONTEXT.md                  This file
-data/index.json             {"site","name","years":[...],"through":"YYYY-MM-DD","updated":"..."}
-data/YYYY.json              {"year":2016,"rows":[["MM-DD", mean, min, max], ...]}   cfs; min/max may be null
+data/index.json             USGS: {"site","name","years":[...],"through":"YYYY-MM-DD","updated":"..."}
+data/YYYY.json              USGS Castolon: {"year":2016,"rows":[["MM-DD", mean, min, max], ...]}  cfs; min/max may be null
 data/stats.json             USGS daily statistics: {"begin","end","fields":[...],"rows":[["MM-DD", ...fields]]}
-scripts/update_data.py      Pulls USGS data → data/*.json (Python stdlib only)
-.github/workflows/update-data.yml   Daily cron (12:17 UTC) + manual "backfill" dispatch
+data/ibwc/<key>.json        IBWC long-record series: {"key","dataset","name","unit","start":"YYYY-MM-DD","end","v":[daily values, null = missing]}
+                              keys: johnson_ranch, presidio, conchos_ojinaga, terlingua (cfs); la_boquilla (million m3)
+data/ibwc/index.json        Summary of the IBWC files (name, unit, start, end, days with data)
+data/validation.json        Cross-validation results for every model spec + recalibration table (written by scripts/validate.mjs)
+scripts/update_data.py      USGS pull -> data/*.json (Python stdlib only)
+scripts/update_ibwc.py      IBWC pull -> data/ibwc/*.json (Python stdlib only)
+scripts/validate.mjs        Node: cross-validates all specs in model.js, fits the recalibration, writes data/validation.json (~3 min)
+.github/workflows/update-data.yml   Daily 12:17 UTC: USGS + IBWC pulls, commit if changed (manual "backfill" option for USGS)
+.github/workflows/validate.yml      Weekly (Mon) + on changes to model.js/validate.mjs: re-run validation, commit
 ```
 
-- **No build step.** GitHub Pages serves the repo root from `main`. Run locally with `python3 -m http.server` in the repo root, then open <http://localhost:8000/>. The pages `fetch()` JSON, so `file://` won't work.
-- **Data is cached in the repo.** Browsers never call USGS. The Action commits updated JSON, and each commit triggers a Pages redeploy (~1 min).
-- The Action re-pulls **the current and previous year** daily, so USGS provisional revisions flow in. `workflow_dispatch` with `backfill=true` re-pulls every year since 2007.
-- It commits only when data actually changed. `index.json.updated` changes only then.
-
----
+- **No build step.** GitHub Pages serves the repo root from `main`. Run locally with `python3 -m http.server` in the repo root, then open <http://localhost:8000/planner.html>. The pages `fetch()` JSON, so `file://` won't work.
+- **Data is cached in the repo.** Browsers never call USGS or IBWC. The Actions commit updated JSON, and each commit triggers a Pages redeploy (~1 min).
+- USGS: the current and previous year are re-pulled daily. IBWC: each series' full record is re-pulled daily (a few hundred KB each), so revisions flow in.
+- Workflows commit only when files actually change, and they `git pull --rebase` before pushing.
 
 ## 3. Data sources in use (USGS)
 
@@ -102,76 +108,111 @@ On this flashy river the **mean is badly skewed by floods**. On Sep 9 the median
 
 ---
 
-## 5. Trip planner model (`planner.html`), exact specification
+## 5. Trip planner model v2 (`model.js`), exact specification
 
-Everything is computed client-side from `data/*.json`. The model is plain JavaScript (logistic regression via Newton–Raphson, Gaussian elimination for the 2×2 / 3×3 solves).
+The same `model.js` runs in the browser (the planner) and in Node (`scripts/validate.mjs`), so the validated model and the displayed model can't drift apart. It's plain JavaScript: weighted ridge logistic regression via Newton–Raphson, with small Gaussian-elimination solves.
+
+**History:**
+
+- **v1** (first release): trained on Castolon, 2007+ only (~18 seasons), no weighting.
+- **v2** (current): Johnson Ranch target, the full 1936+ record, recency weighting, and a calibration correction.
 
 ### 5.1 Target
 
-A trip starting on day *t* with length *L* (default 7) is **runnable** iff the USGS **daily mean** at Castolon satisfies `lo ≤ Q ≤ hi` on **every** day *t … t+L−1*. The defaults are `lo=200`, `hi=1200`, and the "Ideal" preset is 300–1,000. Any missing day makes the outcome unknown, and it's excluded.
+A trip starting on day *t* with length *L* (default 7) is **runnable** iff the **daily mean** at **Johnson Ranch (IBWC 08375000)** satisfies `lo ≤ Q ≤ hi` on **every** day *t … t+L−1*. The defaults are `lo=200`, `hi=1200`, and the "Ideal" preset is 300–1,000. Any missing day makes the outcome unknown, and it's excluded. Johnson Ranch stands in for Castolon (§6).
 
-### 5.2 Predictor
+### 5.2 Predictors (functions in model.js)
 
-`x = log10(max(1, min(daily mean over the 7 days ending on the as-of date)))`. At least 5 of the 7 days must be present.
-
-Rationale: the 7-day minimum approximates **baseflow** and ignores storm spikes, which pass in days. The log handles 0 to ~50k cfs.
+- `xBase` = log10(max(1, min daily mean at the target gauge over the 7 days ending on the as-of date)). Needs ≥5 of 7 days. This is **the only predictor in the default model.**
+- `xUp` = log10 of the Presidio (08374200) mean over the 3 days ending on the as-of date. Tested; not in the default.
+- `xStore` = La Boquilla storage in km³ (latest value within 7 days). Tested; not in the default.
 
 ### 5.3 Model
 
-For as-of date *d* and lead *k* (start date = *d+k*), a separate logistic regression is fit for each *k*:
+For as-of date *d* and lead *k* (start date = *d+k*), a separate weighted logistic regression is fit for each *k*:
 
 ```
-P(runnable) = σ(β0 + β1·x + β2·x²)
+P = σ(β0 + β1·z1 + β2·z1² [+ β·z_up] [+ β·z_store])     z = standardized features (weighted mean/sd)
 ```
 
-- The quadratic weight is 1 for k ≤ 30, falls linearly to 0 at k = 60, and is 0 after that. For k between 30 and 60 the prediction is `w·P_quad + (1−w)·P_linear`. The blend removes a visible step where the two models meet.
-- **Training sample:** for every year except the as-of year, the pairs (x on day d′, outcome of the trip starting d′+k) for d′ within ±10 days of the same calendar date, every 2 days. That's about 11 pairs per year, ~200 per fit. **The effective sample size is about the number of years (~18), not 200**, because neighboring pairs overlap heavily.
-- Ridge λ = 0.1 on the non-intercept terms, and 25 Newton iterations (15 in cross-validation).
-- **Output clamp: [2%, 90%].** The uncapped model was overconfident at the top end (when it said ≥90%, the trip worked 78% of the time).
-- **Base rate** = mean outcome in the same training sample. The dashed line on the chart is the benchmark the model has to beat.
-- If *x* is outside the training range, the page shows an "extrapolating" warning.
+- **Quadratic blend:** the quadratic term on `xBase` has weight 1 for k ≤ 30, falls linearly to 0 at k = 60, and is 0 beyond. The prediction is `w·P_quad + (1−w)·P_linear`.
+- **Training sample:** every year ≥ `minYear` except the excluded year. For each year, the pairs (features on day d′, outcome of the trip starting d′+k) for d′ within ±10 days of the same calendar date, every 2 days. That's ~11 pairs per year, ~1,000 per fit. **The effective sample size ≈ the number of years**, because neighboring pairs are heavily autocorrelated.
+- **Recency weighting:** year *y* gets weight `0.5^(|refYear − y| / half)`. For live forecasts `refYear` = the as-of year. Default half = **12 years**.
+- **Fit:** ridge λ = 1 on the standardized slopes, Newton–Raphson for 25 iterations (15 in validation).
+- **Calibration correction (default on):** Platt scaling `p' = σ(a + b·logit p)`. The (a, b) pairs are fit per lead (3, 7, 14, 30, 45, 60, 90, 120 d) on the default spec's forward-chained validation forecasts, and interpolated linearly by lead. They're stored in `data/validation.json → results[range].recalibrated.params`. The correction applies only to the default spec, 7-day trips, and a validated range (200–1,200 or 300–1,000). Otherwise the page falls back to raw probabilities and says so.
+- **Output clamp:** [2%, 95%].
+- **Base rate:** the weighted mean outcome in the same training sample, shown as the dashed line.
+- **Extrapolation:** if the current `xBase` is outside the training range, the page shows a warning.
 
-### 5.4 Validation (leave-one-year-out, computed live on the page)
+### 5.4 Candidate specs (all in `model.js → SPECS`)
 
-The model is refit without year *y* and then asked to predict year *y*. Forecasts are issued every 10 days across the year, for every year. The score is the Brier skill score against the base rate (0 = no better than the calendar, 1 = perfect). These are the default settings (7 days, 200–1,200):
+| key | predictors | years | half-life |
+|---|---|---|---|
+| v1-like | base | 2007+ | none |
+| A | base | 1936+ | none |
+| A-h25 / A-h12 / A-h8 / A-h5 | base | 1936+ | 25 / 12 / 8 / 5 yr |
+| B, B-h25, B-h12, B-h8 | base + Presidio | 1936+ | none / 25 / 12 / 8 |
+| C | base + Presidio + storage | 1993+ | none |
+| C-h12 | base + Presidio + storage | 1993+ | 12 |
 
-| Lead | Skill, all issue dates | Skill, issued Aug–Nov |
-|---|---|---|
-| 7 d | +0.35 | +0.36 |
-| 14 d | +0.30 | +0.33 |
-| 30 d | +0.19 | +0.33 |
-| 45 d | +0.13 | +0.21 |
-| 60 d | +0.13 | +0.21 |
-| 90 d | +0.04 | +0.10 |
-| 120 d | +0.02 | +0.05 |
+### 5.5 Validation (`scripts/validate.mjs`)
 
-Calibration was good below 70%, with slight overconfidence at 70–90% (78% forecast vs 72% observed). Values from about 4,900 out-of-sample forecasts.
+- **Evaluation years:** 2008–2025. Forecasts are issued every 10 days across the year, at leads 3/7/14/30/45/60/90/120 d, for 7-day trips. Only (date, lead) cases where every spec can forecast are scored.
+- **Schemes:**
+  - **forward:** train only on years < target year. This is realistic and is the primary scheme.
+  - **loyo:** train on all other years.
+- **Score:** the Brier skill score against a **common reference**, the unweighted 1993+ base rate for that date and lead (target year excluded; for forward, years < target). "Fall" = issued Aug–Nov (day of year 212–334).
+- **Selection rule (fixed in advance):** the best mean forward BSS over leads 3–60 d, 200–1,200 cfs, fall. Scores:
 
-### 5.5 How the design was chosen
+| spec | score | | spec | score |
+|---|---|---|---|---|
+| **A-h12** | **0.316** | | A-h5 | 0.287 |
+| B-h12 | 0.313 | | B | 0.270 |
+| B-h8 | 0.312 | | C-h12 | 0.242 |
+| A-h25 / A-h8 | 0.310 | | C | 0.240 |
+| B-h25 | 0.299 | | v1-like | 0.115 |
+| A | 0.294 | | | |
 
-Prototyped in Python and scored by leave-one-year-out Brier skill:
+  A-h12, A-h8, B-h12 and B-h8 are within noise of each other (±0.03). A-h12 was kept as the simplest.
 
-- **Predictors compared:** the 7-day median, the 30-day median, and the 7-day minimum. The 7-day minimum was slightly best at every lead.
-- **Quadratic term:** it added skill at short leads (e.g. +0.32 → +0.36 at 7 days) and lost skill beyond ~60 days, hence the blend.
-- **Why so few inputs:** with ~18 seasons, additional inputs mostly fit noise.
+**Default model skill** (forward, 200–1,200 cfs):
 
-### 5.6 Other planner views
+| Lead (d) | 3 | 7 | 14 | 30 | 45 | 60 | 90 | 120 |
+|---|---|---|---|---|---|---|---|---|
+| A-h12 raw, all year | +0.44 | +0.41 | +0.39 | +0.30 | +0.22 | +0.16 | +0.06 | +0.05 |
+| A-h12 **+ calibration**, all year | +0.46 | +0.43 | +0.40 | +0.31 | +0.24 | +0.21 | +0.13 | +0.11 |
+| A-h12 **+ calibration**, fall | +0.34 | +0.34 | +0.35 | +0.31 | +0.29 | +0.29 | +0.20 | +0.20 |
 
-- **Climatology line:** the share of years runnable, by start date.
-- **Year × start-date grid:** each cell is classified ideal / workable / too low / too high / no data, and the 2016 trip is marked.
-- **Monthly table:** the share of years with at least one runnable start in each month.
-- **URL hash state:** `#asof=YYYY-MM-DD&len=7&lo=200&hi=1200`. A past as-of date gives a true hindcast (that year is held out) with an "actual outcome" strip.
+The recalibrated skill is scored by leaving out one year from the *recalibration fit* too: the correction applied to year *y* is fit on the other years' forward forecasts. Residual optimism: the correction is fit using years after *y*, so it knows the 2008–2025 regime as a whole.
 
-### 5.7 Readings as of 2026-09-30
+**Calibration** (forward, 200–1,200, predicted → observed):
 
-- **2026:** Castolon baseflow is about 32 cfs, the **lowest of all years on that date**, and the model gives ≤15% for any November start. Caution: on **Sep 30, 2026 the IBWC gauge below the Conchos at Presidio jumped from ~2 m³/s to ~17 m³/s (~600 cfs)**, with the Conchos at Ojinaga also rising. That pulse hadn't reached Castolon when this was written. It's exactly the kind of upstream signal the current model can't see (§8).
-- **2016 hindcast:** as of Oct 1, 2016 (2016 held out), early-November starts were ~80%.
+- Raw A-h12: 0.04→0.03, **0.19→0.12, 0.39→0.23, 0.61→0.49**, 0.79→0.72, 0.90→0.86. Too high in the middle range. Every spec shows this, because 2008–2025 was drier than the weighted training set.
+- With the correction: 0.05→0.06, 0.16→0.14, 0.40→0.40, 0.59→0.60, 0.79→0.80, 0.94→0.92.
 
----
+### 5.6 What was tried and didn't help (negative results)
+
+- **Presidio flow (`xUp`)**: no gain at any lead, including 3 days. Once Johnson Ranch baseflow is known, Presidio adds little for week-long windows, and big upstream pulses are rare on any given issue date. It might still matter for a same-week "go/no-go" at leads of 0–2 days, which weren't scored.
+- **La Boquilla storage (`xStore`)**: slightly *worse*. It forces training to 1993+, which loses 57 years, and its signal (Oct-1 storage terciles → November runnable share 46/58/78%) seems mostly captured by current baseflow already.
+- **No recency weighting** (spec A): good at short leads but negative skill beyond 90 d. The regime has shifted (§7.1 decade table).
+- **v1 design (2007+ only)**: fine under leave-one-year-out (it learns from future years) but poor under forward chaining (≈ +0.12).
+
+### 5.7 Other planner views
+
+- **Upstream right now:** tiles for Presidio and the Rio Conchos at Ojinaga (3-day means), and La Boquilla storage, each ranked against the same date in other years.
+- **Climatology:** runnable share by start date for the last 20 years vs all years since 1936, and a canvas grid of every year × start date (newest at top) colored ideal / workable / too low / too high / no data. The 2016 trip is outlined.
+- **Monthly table:** the share of years with ≥1 runnable start in each month, for all years and the last 20.
+- **Validation tables** read from `data/validation.json`, with toggles for range, scheme and season. The row in use is highlighted.
+- **URL hash state:** `#asof=YYYY-MM-DD&len=7&lo=200&hi=1200[&model=KEY][&recal=0]`. A past as-of date gives a true hindcast (that year is held out) with an "actual outcome" strip.
+
+### 5.8 Readings as of 2026-09-30
+
+- **2026:** Johnson Ranch 7-day minimum is **3.5 cfs**, the **lowest of 91 years for that date**. The model gives ≤8% for any start in the next 90 days and flags that it's extrapolating. La Boquilla holds ~650 million m³, low (5th lowest of 34 years since 1993 on that date). **Watch:** on 2026-09-30 the Presidio 15-min telemetry jumped from ~2 m³/s to ~17 m³/s (~600 cfs), with the Conchos at Ojinaga also rising. It wasn't yet in the daily series or at Johnson Ranch when this was written.
+- **2016 hindcast** (as of Oct 1, 2016, with 2016 held out): early-to-mid November starts ~58–63% with the correction. Actual: the Nov 12–18 trip was runnable, near the minimum by the end.
 
 ## 6. The gauge question (important assumption)
 
-The model targets **Castolon (USGS 08374550)** because it's the only gauge on the reach with a long, public, API-accessible daily record at the time the model was built, and because both guides give the same numbers.
+The guides' thresholds don't name a gauge. v1 targeted **Castolon (USGS 08374550)**, the only gauge on the reach with a public API and a continuous daily record (from 2007). v2 targets **Johnson Ranch (IBWC 08375000)** for its 1936+ record, on the evidence below that it's effectively the same measurement. The flow chart still shows Castolon.
 
 Evidence gathered since:
 
@@ -191,10 +232,7 @@ All of these were tested from a scripted client.
 
 `https://waterdata.ibwc.gov/AQWebportal/` is Aquatic Informatics' AQUARIUS WebPortal. There's no documented public API, but the web app's own endpoints work.
 
-**Session:**
-
-1. `GET /AQWebportal/Disclaimer?returnUrl=/AQWebportal/Data` sets the `.AspNetCore.Session` and antiforgery cookies.
-2. `POST /AQWebportal/AcceptDisclaimer` with form `returnUrl=/AQWebportal/Data` returns a 302 to `/Data`. Keep the cookies. Use a real cookie-handling client: Python `requests.Session()` worked, while curl's cookie jar didn't persist these cookies in testing.
+**Session:** the **export endpoint needs no session at all** (tested 2026-09-30; `scripts/update_ibwc.py` just GETs it). The discovery endpoints below are the web UI's own. Accepting the disclaimer (`GET /AQWebportal/Disclaimer`, then `POST /AQWebportal/AcceptDisclaimer` with `returnUrl=/AQWebportal/Data`) was unreliable in testing. It sometimes redirected to `/NotFound`, but the discovery calls worked with the cookies from the GET anyway.
 
 **Discovery endpoints** (POST, form-encoded, `X-Requested-With: XMLHttpRequest`):
 
@@ -209,6 +247,7 @@ All of these were tested from a scripted client.
 ```
 
 - CSV: line 1 is a `#Data Set Export - …` comment, line 2 is the header `Timestamp (UTC-06:00),Value (<unit>)`, then `YYYY-MM-DD HH:MM:SS,value` rows, then a long disclaimer row at the end.
+- ⚠️ The CSV contains literal `NaN` values on some gap days. Drop them, or `JSON.parse` will choke downstream.
 - ⚠️ **Units differ by dataset.** `Discharge.Daily Rounded cfs@…` is ft³/s. `Discharge.Best Available@…` (15-min telemetry) is **m³/s** (multiply by 35.3147). Reservoir datasets are in m³/s ("cms") and million m³ ("mcm").
 
 **Key datasets (LocationId → dataset identifier, record span):**
@@ -244,25 +283,26 @@ All of these were tested from a scripted client.
 
 ---
 
-## 8. Roadmap (recommended order)
+## 8. Roadmap
 
-1. **Retarget training onto Johnson Ranch (1936→) and keep Castolon for display.** That's ~90 seasons instead of ~18. Handle non-stationarity explicitly (recency weighting or decade-blocked CV). This one change is expected to help more than any new input.
-2. **Add Presidio (08374200) and Conchos at Ojinaga (08373000) as short-lead predictors.** Travel time Ojinaga → Presidio → Castolon is on the order of 1–3 days (verify empirically by lagged cross-correlation). They catch pulses before they reach Castolon, like the 2026-09-30 pulse.
-3. **Add Conchos reservoir storage** (La Boquilla 1993→, and the others 2015→), probably as a total or percent-full index, for 1–4 month leads.
-4. **Two-stage structure:**
-   - *Stage 1:* predict the season's baseflow level (e.g. the median of daily minima for the target month) from storage, current baseflow, Presidio flow, the monsoon rainfall index and ONI.
-   - *Stage 2:* map that level plus flash-flood climatology to trip-window odds.
+**Done in v2:** Johnson Ranch as the training target (1936+); recency weighting (half-life chosen by validation); Presidio and La Boquilla tested (no gain, documented); Platt recalibration; upstream tiles; a shared `model.js` for browser and Node; weekly validation Action.
 
-   This keeps the parameter count low relative to the data.
-5. **Rainfall:** a CHIRPS Jun–Sep Conchos-basin total as a monsoon index. Test it against storage, which likely already captures most of it.
-6. **ENSO and NOAA seasonal outlooks:** add only if leave-one-year-out skill improves. Report the result either way.
-7. **Short-range layer:** NWS rainfall forecasts plus a storm-risk climatology (the chance of a >1,200 cfs day within the window, by date).
-8. **Two-gauge runnable rule for Colorado Canyon:** see §6.
+**Next, in rough priority order:**
+
+1. **ENSO (ONI) as a predictor.** Easy to get (§7.2), and 2026 has a strong El Niño. Test as `C`-style add-ons on A-h12 and keep only if the forward fall BSS improves beyond noise (> ~0.03).
+2. **Monsoon rainfall index.** A CHIRPS Jun–Sep basin total over the Rio Conchos (1981+). One-time backfill plus a monthly append. Test like ENSO.
+3. **Forward-chained recalibration.** Fit the Platt correction for year *y* only on years < *y*, to remove the residual optimism noted in §5.5. This needs forward forecasts before 2008 (e.g. evaluate 1990–2025).
+4. **Nested selection.** The half-life and spec were picked on the same 2008–2025 data they're scored on. A nested scheme (select on years < *y*) would give an unbiased skill estimate. Expect slightly lower numbers.
+5. **Same-week layer (leads 0–3 d).** This is where Presidio/Ojinaga upstream flow and NWS rainfall forecasts should matter. Consider a separate short-lead model scored on leads 0–3.
+6. **Colorado Canyon two-gauge rule.** Require Presidio ≥ X as well as Johnson Ranch in range, for trips that start above Lajitas.
+7. **Storm-risk climatology.** The chance of any day > 1,200 cfs within the window, by date, shown separately from the baseflow outlook.
 
 ### Pitfalls to avoid
 
 - **Leakage:** always hold out the whole target year (and ideally neighbors). Pairs within a year are heavily autocorrelated.
-- **Overfitting:** with N ≈ 18 (or ~90 with Johnson Ranch), keep models to a handful of parameters. Report cross-validated skill, not in-sample fit.
+- **Overfitting:** the effective N is the number of years (~90, and far fewer that resemble today's regime). Keep models to a handful of parameters, and report forward-chained skill, not in-sample fit.
+- **Non-stationarity:** decades aren't exchangeable (§7.1). Unweighted long-record models look fine at short leads and fail at long ones.
+- **Same code path:** validate the exact `model.js` the page runs. Don't reimplement the model in Python for validation.
 - **Units:** IBWC mixes cfs and m³/s (§7.1). USGS RDB column order (§3.2).
 - **Provisional data:** recent values get revised. The Action re-pulls the current and previous year for this reason.
 - **Human decisions:** Conchos releases are managed (irrigation districts; Mexico's 1944 Treaty delivery obligations over 5-year cycles). No hydrologic model can foresee a release decision.
@@ -275,9 +315,11 @@ All of these were tested from a scripted client.
 - The data pipeline is Python standard library only, so it runs on a bare GitHub runner.
 - Commit data only when it changes. Keep `data/*.json` compact (no whitespace in the year files).
 - Parse external formats by column name/suffix, never by position.
-- Every model change should update the validation table (§5.4) and this file.
+- Every model change should re-run `node scripts/validate.mjs` (or let the workflow do it) and update §5 of this file.
 
 ## 10. Open questions
+
+- Why does every spec overforecast mid-range probabilities in 2008–2025? Is it purely the regime shift, or also the ±10-day pooling mixing in wetter neighboring dates?
 
 - Is Castolon (or Johnson Ranch) really the gauge the guide's thresholds were written for? It might be Presidio or Lajitas. A second data point from another trip would help.
 - Travel time and attenuation Presidio → Castolon at different flows.

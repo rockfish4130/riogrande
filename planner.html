@@ -85,16 +85,12 @@ summary{cursor:pointer;color:var(--ink2)}
 <div class="wrap">
   <nav class="tabs"><a href="./">Flow chart</a><a href="planner.html" aria-current="page">Trip planner</a></nav>
   <h1>Big Bend canoe trip planner</h1>
-  <p class="sub">How likely is a runnable week, Colorado Canyon through Santa Elena Canyon? It's a statistical model trained on every season since 2007 at USGS 08374550, Rio Grande near Castolon. Everything is computed in your browser from the same data the flow chart uses. The full method, assumptions and validation are further down this page. Want to build on it? Grab the <a href="#build">full-context file</a>.</p>
+  <p class="sub">How likely is a runnable week, Colorado Canyon through Santa Elena Canyon? It's a statistical model trained on <b>90 years</b> of daily flow at IBWC 08375000, Rio Grande at Johnson Ranch (just below the USGS Castolon gauge, which it tracks closely). Recent years count most. Everything runs in your browser. The method, assumptions and validation are below, and there's a <a href="#build">full-context file</a> if you want to build on it.</p>
 
   <div class="card">
     <div class="controls">
-      <label>Forecast as of
-        <input type="date" id="asof">
-      </label>
-      <label>Trip length (days)
-        <input type="number" id="len" min="2" max="14" value="7">
-      </label>
+      <label>Forecast as of <input type="date" id="asof"></label>
+      <label>Trip length (days) <input type="number" id="len" min="2" max="14" value="7"></label>
       <label>Flow target
         <span class="seg" id="preset">
           <button type="button" data-lo="200" data-hi="1200" aria-pressed="true">Workable 200–1,200</button>
@@ -103,224 +99,189 @@ summary{cursor:pointer;color:var(--ink2)}
       </label>
       <label>Min cfs <input type="number" id="lo" value="200" step="10"></label>
       <label>Max cfs <input type="number" id="hi" value="1200" step="10"></label>
+      <label>Model <select id="spec"></select></label>
+      <label style="flex-direction:row;align-items:center;gap:6px;padding-bottom:6px"><input type="checkbox" id="recal" checked> Calibration correction</label>
       <button class="btn" id="latest" type="button">Jump to latest data</button>
     </div>
     <div class="headline" id="headline"></div>
     <div class="legend">
       <span><i class="sw" style="background:var(--model)"></i>Model: chance a trip starting that day stays in range every day</span>
-      <span><i class="sw dash"></i>Typical odds for that date (base rate)</span>
+      <span><i class="sw dash"></i>Typical odds for that date (weighted base rate)</span>
       <span id="actualLegend"><i class="sq" style="background:var(--ok)"></i>What actually happened (strip below chart)</span>
     </div>
     <div class="plot"><svg id="fc" viewBox="0 0 1000 380" role="img" aria-label="Probability of a runnable trip by start date"></svg></div>
     <p class="note" id="fcnote"></p>
   </div>
 
-  <h2>Which weeks are usually good?</h2>
-  <p class="prose" style="color:var(--ink2)">The line shows the share of past years in which a trip starting that day stayed in range the whole way (current trip length and flow range). The grid shows every year in the record: each column is a start date, and each cell is colored by what that trip would have met.</p>
+  <h2>Upstream right now</h2>
+  <p class="prose" style="color:var(--ink2)">The model's forecast rests on baseflow at Johnson Ranch. These upstream readings were tested as extra inputs and didn't improve validated skill (see "How the design was chosen" below). They're still the first place a change shows up, so they're shown here for your own judgment.</p>
+  <div class="headline" id="upstream"></div>
+
+  <h2>Which weeks are usually good, and is it changing?</h2>
+  <p class="prose" style="color:var(--ink2)">The lines show the share of years in which a trip starting that day stayed in range the whole way (current trip length and range): for the whole record, and for the last 20 years. The grid shows every year since 1936 (newest at top): each column is a start date, and each cell is colored by what that trip would have met.</p>
   <div class="card">
     <div class="legend">
+      <span><i class="sw" style="background:var(--model)"></i>Last 20 years</span>
+      <span><i class="sw dash"></i>All years since 1936</span>
       <span><i class="sq" style="background:var(--ideal)"></i>Ideal (300–1,000 every day)</span>
-      <span><i class="sq" style="background:var(--ok)"></i>Workable (inside your range every day)</span>
+      <span><i class="sq" style="background:var(--ok)"></i>Inside your range every day</span>
       <span><i class="sq" style="background:var(--low)"></i>Too low on some day</span>
       <span><i class="sq" style="background:var(--high)"></i>Too high on some day</span>
       <span><i class="sq" style="background:var(--none)"></i>No data</span>
     </div>
-    <div class="plot"><svg id="clim" viewBox="0 0 1000 560" role="img" aria-label="Historical share of runnable trips by start date, and year-by-year grid"></svg></div>
+    <div class="plot"><svg id="climline" viewBox="0 0 1000 200" role="img" aria-label="Share of years runnable by start date"></svg></div>
+    <div class="plot" style="position:relative"><canvas id="grid" style="display:block;width:100%;min-width:680px"></canvas></div>
   </div>
   <h3>Chance of at least one runnable start date in each month</h3>
-  <p class="note">If you can move your dates anywhere inside the month, what share of past years offered at least one start date that worked?</p>
+  <p class="note">If you can move your dates anywhere inside the month, how often did at least one start date work?</p>
   <div class="scroll"><table id="months"></table></div>
 
   <h2>How well does the model do?</h2>
-  <p class="prose" style="color:var(--ink2)">Validation uses leave-one-year-out cross-validation. For each year, the model is refit without that year and then asked to predict it, so it never sees the answer. The score is the Brier skill score against the base rate: 0 means no better than typical odds for the date, 1 would be perfect, and negative means worse than the base rate. The check re-runs whenever you change the trip length or flow range.</p>
+  <div class="prose" style="max-width:none">
+    <p>Every candidate model was scored on 2008–2025 by forecasting each year without it. There are two schemes:</p>
+    <ul>
+      <li><b>Forward</b> trains only on years <i>before</i> the target year, which is what a real forecaster would have had.</li>
+      <li><b>Leave-one-year-out</b> trains on all other years, before and after.</li>
+    </ul>
+    <p>The score is the <b>Brier skill score</b> against a common benchmark: the plain 1993-onward base rate for that date and lead. 0 means no better than that benchmark, 1 would be perfect, and negative means worse. Forecasts are issued every 10 days across the year, and "fall" means issued Aug–Nov. These numbers come from <span class="mono">scripts/validate.mjs</span>, which runs <i>the same</i> <span class="mono">model.js</span> this page uses, for 7-day trips. The <b>highlighted row</b> is the model in use.</p>
+  </div>
   <div class="card">
+    <div class="controls" style="margin-bottom:6px">
+      <label>Range <span class="seg" id="vTarget"><button type="button" data-k="200-1200" aria-pressed="true">200–1,200</button><button type="button" data-k="300-1000">300–1,000</button></span></label>
+      <label>Scheme <span class="seg" id="vScheme"><button type="button" data-k="forward" aria-pressed="true">Forward</button><button type="button" data-k="loyo">Leave-one-year-out</button></span></label>
+      <label>Issued <span class="seg" id="vSeason"><button type="button" data-k="fall" aria-pressed="true">Aug–Nov</button><button type="button" data-k="all">All year</button></span></label>
+    </div>
     <div class="scroll"><table id="skill"></table></div>
-    <h3>Calibration: when the model says X%, does it happen X% of the time?</h3>
+    <h3>Calibration of the model in use (<span id="calibTitle"></span>): when it says X%, how often did the trip work?</h3>
     <div class="scroll"><table id="calib"></table></div>
-    <p class="note" id="cvnote">Running cross-validation…</p>
+    <p class="note" id="vnote"></p>
   </div>
 
   <h2>How the model works</h2>
   <div class="prose">
     <h3>1. What counts as a runnable trip</h3>
-    <p>A trip that starts on day <i>t</i> is <b>runnable</b> if the USGS <b>daily mean</b> discharge at Castolon stays between your min and max on <b>every</b> day from <i>t</i> to <i>t</i>+L−1, where L is the trip length (default 7). One day outside the range fails the trip. That's deliberately strict: a single 5,000 cfs flash flood, or one day at 150 cfs, changes the trip. Because these are daily means, a short spike inside a day can be missed, and the daily max is shown on the flow chart if you want to check.</p>
+    <p>A trip starting on day <i>t</i> is <b>runnable</b> if the <b>daily mean</b> discharge stays between your min and max on <b>every</b> day from <i>t</i> to <i>t</i>+L−1, where L is the trip length (default 7). One day outside the range fails the trip. A single flash flood or one day below the minimum is enough. Daily means can hide a short spike within a day.</p>
     <p>The thresholds come from Southwest Paddler's guides for <a href="https://southwestpaddler.com/docs/riogrande2.html">Colorado Canyon</a> and <a href="https://southwestpaddler.com/docs/riogrande3.html">Santa Elena Canyon</a>. Both give <b>minimum 200 cfs, optimum 300–1,000, maximum 1,200</b>.</p>
 
-    <h3>2. Which gauge (and why it's an assumption)</h3>
-    <p>The guides don't name a gauge. Their links point to "USGS Gauge / NOAA River Gauges" pages that no longer resolve. This planner assumes <b>USGS 08374550, Rio Grande near Castolon</b>, for three reasons: it's the only gauge on this stretch with a long, continuous public daily record (continuous since August 2007) and an API, it sits at the Santa Elena take-out, and the guides give identical numbers for both canyons, which suggests one reference gauge.</p>
-    <div class="warn"><b>Caveats.</b> Castolon is <i>below</i> the Terlingua Creek confluence, so a storm on Terlingua Creek shows up here but not in Colorado Canyon or most of Santa Elena. During dry baseflow periods, which are exactly the conditions that decide fall trips, Terlingua Creek adds roughly nothing, and Castolon should track flow through both canyons. Gains and losses between Presidio, Lajitas and Castolon (seepage, evaporation, irrigation diversions) aren't modeled. For the upstream Colorado Canyon section, the IBWC gauge below the Rio Conchos near Presidio (08374200) would be the better reference, but its data isn't available through the USGS API.</div>
+    <h3>2. Which gauge, and why it's still an assumption</h3>
+    <p>The guides don't name a gauge. v1 of this planner used <b>USGS 08374550 near Castolon</b>, which has a continuous record only since 2007. v2 uses <b>IBWC 08375000 at Johnson Ranch</b>, a few miles downstream, which has a complete daily record since April 1936.</p>
+    <p>Over 6,998 overlapping days the two agree closely. The median Johnson Ranch/Castolon ratio is <b>1.00</b> for flows of 50–3,000 cfs (10th–90th percentile 0.65–1.33), and they agree on whether a 7-day window is runnable <b>95.5%</b> of the time. The flow chart tab still shows Castolon.</p>
+    <p>Evidence the thresholds fit this stretch of river: during the Nov 12–18, 2016 trip, Castolon read 286 → 209 cfs and the paddler felt close to the minimum by the last day. Presidio, upstream, read only 180 → 141 over the same days. That's one trip, so weak evidence, but it points to the Castolon/Johnson Ranch reach.</p>
+    <div class="warn"><b>Caveats.</b> Johnson Ranch and Castolon are below the Terlingua Creek confluence, so a storm on Terlingua Creek shows up here but not in Colorado Canyon. Gains and losses between Presidio and Castolon (Alamito Creek, springs, seepage, diversions) aren't modeled. For the upstream Colorado Canyon section, Presidio (IBWC 08374200) is physically closer. Both are shown under "Upstream right now".</div>
 
     <h3>3. Data</h3>
     <ul>
-      <li>USGS daily values, parameter 00060 (discharge, cfs), statistic 00003 (daily mean). The flow chart's daily GitHub Action pulls them into <span class="mono">data/YYYY.json</span>. Recent values are provisional and may be revised.</li>
-      <li>Training uses every year with data (partial 2007 through the latest complete day). When you forecast "as of" a date, <b>that year is always held out</b>, so past forecasts shown here are true out-of-sample hindcasts.</li>
+      <li><b>IBWC Water Data Portal</b> exports: Johnson Ranch (1936→), Presidio below the Rio Conchos (1900→, with 1915–29 missing), the Rio Conchos near Ojinaga (1954→), and La Boquilla reservoir storage from CONAGUA (1993→). A GitHub Action refreshes them daily into <span class="mono">data/ibwc/*.json</span>.</li>
+      <li>IBWC values are <b>provisional</b> and can be revised. The whole record is re-pulled daily, so revisions flow in.</li>
+      <li>When you forecast "as of" a past date, <b>that year is held out</b> of training, so the page shows a true hindcast.</li>
     </ul>
 
     <h3>4. The model</h3>
-    <p>For each possible start date, the question is "will this trip be runnable?", answered with a probability. It's a <b>logistic regression</b>, refit separately for every lead time <i>k</i> (days from the as-of date to the trip start):</p>
-    <p class="mono" style="display:block;padding:8px 10px">P(runnable | x) = 1 / (1 + e<sup>−(β₀ + β₁x + β₂x²)</sup>),&nbsp;&nbsp;x = log₁₀( min daily mean over the 7 days ending on the as-of date )</p>
+    <p>For each lead time <i>k</i> (days from the as-of date to the trip start), a separate <b>weighted logistic regression</b> is fit:</p>
+    <p class="mono" style="display:block;padding:8px 10px">P(runnable) = 1 / (1 + e<sup>−(β₀ + β₁z + β₂z²)</sup>),&nbsp;&nbsp;x = log₁₀( min daily mean over the 7 days ending on the as-of date ),&nbsp;&nbsp;z = standardized x</p>
     <ul>
-      <li><b>Predictor.</b> The lowest daily mean in the last week is a proxy for <i>baseflow</i>: the water that's actually still in the river, mostly from the Rio Conchos. Storm spikes pass in a few days and mostly don't persist, so using the minimum ignores them. It's log-transformed because flows here range from 0 to about 50,000 cfs. Zeros are floored at 1 cfs.</li>
-      <li><b>Shape.</b> The quadratic term lets the chance fall off on <i>both</i> sides, so "the river's nearly dry" and "the river's in flood" can both mean low odds. It carries full weight up to a 30-day lead. The quadratic version overfit at long leads in cross-validation, so from 30 to 60 days its prediction is blended linearly into a model that's linear in <i>x</i>, and beyond 60 days only the linear model is used. The blend avoids a step in the curve where the two models meet.</li>
-      <li><b>Training sample.</b> For as-of date <i>d</i> and lead <i>k</i>, every training year contributes pairs (x on day d′, outcome of the trip starting on d′+k) for d′ within ±10 days of the same calendar date, sampled every 2 days. That's about 11 pairs per year and roughly 200 per fit. Neighboring pairs overlap and are strongly correlated, so the <b>effective sample size is closer to the number of years (about 18) than to 200</b>. Keep that in mind when reading any single number.</li>
-      <li><b>Regularization.</b> A ridge penalty (λ = 0.1) on the slope terms, fit by Newton–Raphson. Probabilities are capped at 2–90%. Cross-validation showed the uncapped model was overconfident at the top end: when it said 90% or more, the trip worked only about 78% of the time. Eighteen seasons can't support near-certainty.</li>
-      <li><b>Base rate.</b> The dashed line is the share of runnable outcomes in that same training sample. It's what you'd guess from the calendar alone, and it's the benchmark the model has to beat.</li>
+      <li><b>Predictor.</b> The lowest daily mean in the last week is a proxy for <i>baseflow</i>: the water still in the river after storm spikes pass (mostly Rio Conchos water). It's log-transformed because flows run from 0 to about 50,000 cfs, and zeros are floored at 1.</li>
+      <li><b>Shape.</b> The quadratic term lets the odds fall off on both sides (nearly dry or in flood). It has full weight up to a 30-day lead, then blends linearly into a linear-in-<i>x</i> model by 60 days. The quadratic version overfit at long leads.</li>
+      <li><b>Training sample.</b> For as-of date <i>d</i> and lead <i>k</i>, every training year contributes (x on day d′, outcome of the trip starting on d′+k) for d′ within ±10 days of the same calendar date, every 2 days. That's about 11 pairs per year and ~1,000 per fit, but they're heavily autocorrelated. <b>The effective sample size is about the number of years.</b></li>
+      <li><b>Recency weighting.</b> Each training year gets weight 0.5<sup>|Δyears| / 12</sup>, a <b>12-year half-life</b>. The river has changed a lot: for November trips, the runnable share by decade was 1960s 83%, 1990s 92%, 2000s 54%, 2010s 61%, and 2020s so far 28%. Giving 1936 the same vote as 2024 makes long-lead forecasts <i>worse</i> than using recent years alone. Weighting keeps the long record's sample size without letting the old regime dominate.</li>
+      <li><b>Fit.</b> Features are standardized, a ridge penalty (λ = 1) is applied to the slopes, and the fit uses Newton–Raphson.</li>
+      <li><b>Calibration correction (on by default).</b> Validation showed every candidate model forecasting <i>too high</i> in the middle range. Forecasts of about 40% came true only about 23–27% of the time in 2008–2025, because recent years were drier than even the weighted training set. The fix is <b>Platt scaling</b>: p′ = σ(a + b·logit p), with (a, b) fit per lead time on the forward-chained validation forecasts and interpolated between leads. Scored honestly (the correction for each year is fit on the other years), it brings calibration close to exact and raises skill at every lead, most at long leads. Caveat: the correction learns from 2008–2025 as a whole, so if the river's regime shifts again it will lag.</li>
+      <li><b>Clamp.</b> Probabilities are capped at 2–95%.</li>
+      <li><b>Base rate.</b> The dashed line is the weighted share of runnable outcomes in the same training sample. It's what the calendar alone would tell you.</li>
     </ul>
 
-    <h3>5. How the design was chosen</h3>
-    <p>Three predictors were compared by leave-one-year-out Brier skill: the median of the last 7 days, the median of the last 30 days, and the minimum of the last 7 days. The 7-day minimum was slightly best at every lead time. Adding the quadratic term helped at leads up to about a month (skill roughly +0.32 → +0.36 at one week) and hurt beyond about two months, which is where the blended design in section 4 comes from. If today's baseflow is outside the range seen on this date in the training years, the page says so, because the model is then extrapolating. With one predictor and about 18 seasons, more inputs would mostly fit noise.</p>
-
-    <h3>6. What's not in the model (yet)</h3>
+    <h3>5. How the design was chosen (including what didn't work)</h3>
+    <p>Twelve candidate specs were compared (the full table is above). They vary three things: <b>which inputs</b> (baseflow; plus Presidio 3-day mean flow; plus La Boquilla storage), <b>which years</b> (2007+, 1936+, 1993+), and <b>recency half-life</b> (none, 25, 12, 8 or 5 years). The rule chosen in advance was the best mean forward-chained Brier skill for leads of 3–60 days, 200–1,200 cfs, issued Aug–Nov.</p>
     <ul>
-      <li><b>Rio Conchos reservoir storage</b> (La Boquilla, Luis L. León, and others). Conchos water is what sustains fall flow, so this is probably the single most useful missing input at 2–4 month leads. The IBWC data portal mirrors CONAGUA's daily storage and release series (La Boquilla since 1993). It isn't in the model yet; see the roadmap in CONTEXT.md.</li>
-      <li><b>ENSO (El Niño / La Niña).</b> It's easy to get, but with about 18 seasons, one more predictor is as likely to add noise as signal. It will be tested before it's added.</li>
-      <li><b>Weather forecasts and storms.</b> The model knows nothing about rain in the next few days. Flash floods (Sep 25, 2026 peaked at 15,200 cfs; Nov 4, 2016 at 14,600) are the main reason even a good-looking week can fail. Check the <a href="https://water.noaa.gov/gauges/prst2">NWS Presidio forecast</a> in the final week before you go.</li>
-      <li><b>Human decisions.</b> Conchos releases are managed, partly around Mexico's delivery obligations under the 1944 US–Mexico Water Treaty. A release decision can change the picture in days, and no model here can see it coming.</li>
+      <li><b>Long record plus a 12-year half-life</b> won (≈ +0.32 on that metric). Half-lives of 8–25 years were within noise of it. With no weighting, skill went negative beyond 90 days.</li>
+      <li><b>v1's design</b> (only the Castolon-era years, 2007+) scored ≈ +0.13 under forward chaining. It looked fine in leave-one-year-out, because there it's allowed to learn from future years.</li>
+      <li><b>Presidio flow</b> made no difference at any tested lead, including 3 days. Once you know Johnson Ranch baseflow, Presidio adds little for week-long windows, and pulses big enough to matter are rare on any given issue date.</li>
+      <li><b>La Boquilla storage</b> made things slightly <i>worse</i>. It's only available since 1993, so the model loses 57 years of training, and on its own it's a weak signal (Oct-1 storage terciles gave 46% / 58% / 78% November runnable). Most of its information seems to already be in current baseflow.</li>
+      <li>The negative results are reported on purpose. Adding inputs that don't help is the most common way these models fool their authors.</li>
+    </ul>
+
+    <h3>6. Known weaknesses</h3>
+    <ul>
+      <li><b>Calibration depends on the recent regime.</b> Without the correction, the model runs high in the 10–70% range. With it, calibration matches 2008–2025. If the next decade is wetter or drier than that, both the base model and the correction will be biased until they catch up.</li>
+      <li><b>Storms.</b> The model doesn't know about rain in the next few days, and a flash flood can fail any week. Check the <a href="https://water.noaa.gov/gauges/prst2">NWS Presidio gauge</a> and the weather forecast in the final week.</li>
+      <li><b>Human decisions.</b> Conchos releases are managed (irrigation districts, and Mexico's delivery obligations under the 1944 Water Treaty, which run in 5-year cycles; the current one began Oct 25, 2025). A release decision can change things in days.</li>
+      <li><b>Not tested yet:</b> ENSO (El Niño is strongly positive in mid-2026), basin rainfall (CHIRPS), and NOAA seasonal outlooks. See CONTEXT.md.</li>
     </ul>
 
     <h3>7. How to read it</h3>
     <ul>
-      <li><b>Inside about 2 weeks:</b> the model is meaningfully better than the calendar, because the river doesn't change much in two weeks without a storm.</li>
-      <li><b>1–2 months out:</b> it has modest skill. It separates "the river is basically dry right now" years from "there's real baseflow" years, but it can't place a week precisely.</li>
-      <li><b>3+ months out:</b> it has essentially no skill beyond the calendar, and the chart fades that range to say so. Use the "usually good weeks" view for long-range planning.</li>
-      <li>If you can be flexible, flexibility helps more than precision. The monthly table shows how often <i>some</i> start date in the month worked.</li>
+      <li><b>Up to about 2 weeks out:</b> clearly better than the calendar (forward-chained skill ≈ +0.4, or ≈ +0.35 for fall forecasts).</li>
+      <li><b>1–2 months out:</b> moderate skill (≈ +0.2 to +0.3). It reliably separates "basically dry" years from "real baseflow" years.</li>
+      <li><b>3–4 months out:</b> small but real skill once calibrated (≈ +0.1 to +0.2). The chart fades that range to remind you. For long-range planning, also use the "usually good weeks" view and watch the recent-20-years line.</li>
+      <li>Flexibility beats precision. The monthly table shows how often <i>some</i> start date worked.</li>
     </ul>
   </div>
+
   <h2 id="build">Build on this</h2>
   <div class="card prose" style="max-width:none">
-    <p style="margin-top:0"><b>CONTEXT.md</b> is a complete technical handoff for this project: architecture, every data source and its quirks, the model's exact spec and validation numbers, the gauge assumption and the evidence for it, data-access findings (including a 90-year record at Johnson Ranch and the Rio Conchos reservoir series), and a prioritized roadmap. Paste it into your AI tool of choice, or fork the repo and go your own way.</p>
+    <p style="margin-top:0"><b>CONTEXT.md</b> is a complete technical handoff for this project. It covers the architecture, every data source and its quirks (including how to pull from the IBWC portal), the model's exact spec, all the validation results, the gauge assumption and the evidence for it, and a prioritized roadmap. Paste it into your AI tool of choice, or fork the repo and go your own way.</p>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
       <button class="btn" id="copyCtx" type="button">Copy CONTEXT.md to clipboard</button>
-      <a class="btn" style="text-decoration:none" href="https://raw.githubusercontent.com/rockfish4130/riogrande/main/CONTEXT.md" >Raw file</a>
+      <a class="btn" style="text-decoration:none" href="https://raw.githubusercontent.com/rockfish4130/riogrande/main/CONTEXT.md">Raw file</a>
       <a class="btn" style="text-decoration:none" href="https://github.com/rockfish4130/riogrande/blob/main/CONTEXT.md">Read on GitHub</a>
       <a class="btn" style="text-decoration:none" href="https://github.com/rockfish4130/riogrande">Repo</a>
       <span class="note" id="copyMsg"></span>
     </div>
   </div>
-  <p class="src">Data: <a href="https://waterdata.usgs.gov/monitoring-location/USGS-08374550/">USGS 08374550</a> · <span id="through"></span> · <a href="https://github.com/rockfish4130/riogrande">source code</a> (<span class="mono">planner.html</span>; the model is plain JavaScript, no libraries)</p>
+  <p class="src">Data: <a href="https://waterdata.ibwc.gov/AQWebportal/Data">IBWC Water Data Portal</a> (08375000, 08374200, La Boquilla via CONAGUA) · <span id="through"></span> · <a href="https://github.com/rockfish4130/riogrande">source code</a> (<span class="mono">model.js</span>, <span class="mono">planner.html</span>, <span class="mono">scripts/validate.mjs</span>)</p>
 </div>
 <div class="tip" id="tip"></div>
+<script src="model.js"></script>
 <script>
-// copy CONTEXT.md (independent of the model code, so it works even if data fails to load)
 document.getElementById('copyCtx').onclick=async()=>{const msg=document.getElementById('copyMsg');msg.textContent='Fetching…';
   try{const t=await (await fetch('https://raw.githubusercontent.com/rockfish4130/riogrande/main/CONTEXT.md',{cache:'no-cache'})).text();
     await navigator.clipboard.writeText(t);msg.textContent=`Copied (${Math.round(t.length/1000)}k characters). Paste it into your AI tool.`}
   catch(e){msg.textContent='Copy failed. Use Raw file or Read on GitHub instead.'}};
+
 (async function(){
+const M=window.RGModel;
 const $=id=>document.getElementById(id);
 const NS='http://www.w3.org/2000/svg';
 const el=(p,t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);p.appendChild(e);return e};
-const DAY=86400000;
-const dn=(y,m,d)=>Math.round(Date.UTC(y,m-1,d)/DAY);
-const toDate=n=>new Date(n*DAY);
 const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const fmtD=n=>{const d=toDate(n);return MN[d.getUTCMonth()]+' '+d.getUTCDate()};
-const fmtDY=n=>fmtD(n)+', '+toDate(n).getUTCFullYear();
-const iso=n=>toDate(n).toISOString().slice(0,10);
-const pct=p=>Math.round(p*100)+'%';
+const fmtD=n=>{const d=M.toDate(n);return MN[d.getUTCMonth()]+' '+d.getUTCDate()};
+const fmtDY=n=>fmtD(n)+', '+M.yearOf(n);
+const pct=p=>p==null?'—':Math.round(p*100)+'%';
 const cfs=v=>v==null?'—':(v>=100?Math.round(v).toLocaleString():String(+(+v).toFixed(1)));
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const tip=$('tip');
+function showTip(ev,h){tip.innerHTML=h;tip.style.display='block';const tw=tip.offsetWidth,th=tip.offsetHeight;let lx=ev.clientX+14,ly=ev.clientY-th-10;if(lx+tw>innerWidth-8)lx=ev.clientX-tw-14;if(ly<8)ly=ev.clientY+14;tip.style.left=lx+'px';tip.style.top=ly+'px'}
+const hideTip=()=>tip.style.display='none';
 
 // ---------- data ----------
-const index=await (await fetch('data/index.json',{cache:'no-cache'})).json();
-const YEARS=index.years;
-const Q=new Map();
-await Promise.all(YEARS.map(async y=>{
-  const d=await (await fetch(`data/${y}.json`,{cache:'no-cache'})).json();
-  d.rows.forEach(r=>Q.set(dn(y,+r[0].slice(0,2),+r[0].slice(3)),r[1]));
-}));
-const allDays=[...Q.keys()].sort((a,b)=>a-b);
-const FIRST=allDays[0], LAST=allDays[allDays.length-1];
-$('through').textContent='data through '+fmtDY(LAST);
-
-// ---------- model primitives ----------
-function outcome(t,lo,hi,len){ // true/false/null(unknown)
-  for(let i=0;i<len;i++){const v=Q.get(t+i);if(v===undefined)return null;if(v<lo||v>hi)return false}
-  return true;
-}
-function classify(t,lo,hi,len){ // 'ideal'|'ok'|'low'|'high'|null
-  let low=false,high=false,ideal=true;
-  for(let i=0;i<len;i++){const v=Q.get(t+i);if(v===undefined)return null;
-    if(v>hi)high=true;else if(v<lo)low=true;if(v<300||v>1000)ideal=false}
-  if(high)return 'high';if(low)return 'low';return ideal?'ideal':'ok';
-}
-function predictor(d){ // log10(min of daily means over 7 days ending d)
-  let m=Infinity,n=0;for(let i=0;i<7;i++){const v=Q.get(d-i);if(v!==undefined){n++;if(v<m)m=v}}
-  return n>=5?Math.log10(Math.max(m,1)):null;
-}
-function sameDay(y,n){ // same month/day as day n, in year y (Feb 29 -> Feb 28)
-  const d=toDate(n);let mo=d.getUTCMonth()+1,da=d.getUTCDate();
-  if(mo===2&&da===29&&!(y%4===0&&(y%100!==0||y%400===0)))da=28;
-  return dn(y,mo,da);
-}
-function sample(asof,lead,lo,hi,len,exclude){
-  const X=[],Y=[];const y0=toDate(asof).getUTCFullYear();
-  for(const y of YEARS){ if(y===exclude)continue;
-    const base=sameDay(y,asof);
-    for(let s=-10;s<=10;s+=2){const d=base+s;const o=outcome(d+lead,lo,hi,len);if(o===null)continue;const x=predictor(d);if(x===null)continue;X.push(x);Y.push(o?1:0)}
-  }
-  return {X,Y};
-}
-function solve(A,b){ // small Gaussian elimination
-  const n=b.length;A=A.map(r=>r.slice());b=b.slice();
-  for(let i=0;i<n;i++){let p=i;for(let r=i+1;r<n;r++)if(Math.abs(A[r][i])>Math.abs(A[p][i]))p=r;
-    [A[i],A[p]]=[A[p],A[i]];[b[i],b[p]]=[b[p],b[i]];
-    for(let r=i+1;r<n;r++){const f=A[r][i]/A[i][i];for(let c=i;c<n;c++)A[r][c]-=f*A[i][c];b[r]-=f*b[i]}}
-  const x=Array(n).fill(0);for(let i=n-1;i>=0;i--){let s=b[i];for(let c=i+1;c<n;c++)s-=A[i][c]*x[c];x[i]=s/A[i][i]}
-  return x;
-}
-const feats=(x,quad)=>quad?[1,x,x*x]:[1,x];
-function fit(X,Y,quad,l2=0.1,iters=25){
-  const k=quad?3:2;let w=Array(k).fill(0);
-  const base=Y.reduce((a,b)=>a+b,0)/Math.max(Y.length,1);
-  if(base===0||base===1)return {w:null,base};
-  for(let it=0;it<iters;it++){
-    const g=Array(k).fill(0),H=[...Array(k)].map(()=>Array(k).fill(0));
-    for(let i=0;i<X.length;i++){const f=feats(X[i],quad);let z=0;for(let j=0;j<k;j++)z+=w[j]*f[j];
-      const p=1/(1+Math.exp(-z)),r=p*(1-p);
-      for(let a=0;a<k;a++){g[a]+=(p-Y[i])*f[a];for(let b=0;b<k;b++)H[a][b]+=r*f[a]*f[b]}}
-    for(let a=1;a<k;a++){g[a]+=l2*w[a];H[a][a]+=l2}
-    H[0][0]+=1e-6;
-    const step=solve(H,g);let mx=0;for(let a=0;a<k;a++){w[a]-=step[a];mx=Math.max(mx,Math.abs(step[a]))}
-    if(mx<1e-6)break;
-  }
-  return {w,base};
-}
-const P_MIN=.02,P_MAX=.90;
-const clamp=p=>Math.min(P_MAX,Math.max(P_MIN,p));
-function predict(m,x,quad){ if(!m.w)return m.base; const f=feats(x,quad);let z=0;for(let j=0;j<f.length;j++)z+=m.w[j]*f[j];return 1/(1+Math.exp(-z)) }
-// Quadratic model at short leads, linear at long leads, blended linearly
-// between BLEND_A and BLEND_B days so the curve has no step where they meet.
-const BLEND_A=30,BLEND_B=60;
-const quadWeight=lead=>Math.min(1,Math.max(0,(BLEND_B-lead)/(BLEND_B-BLEND_A)));
-function modelP(X,Y,lead,x,iters=25){
-  const wq=quadWeight(lead);let p=0,base=null;
-  if(wq>0){const m=fit(X,Y,true,0.1,iters);p+=wq*predict(m,x,true);base=m.base}
-  if(wq<1){const m=fit(X,Y,false,0.1,iters);p+=(1-wq)*predict(m,x,false);base=m.base}
-  return {p:clamp(p),base};
-}
-function forecast(asof,lead,lo,hi,len,exclude){
-  const {X,Y}=sample(asof,lead,lo,hi,len,exclude);const x=predictor(asof);
-  const base=Y.length?Y.reduce((a,b)=>a+b,0)/Y.length:null;
-  if(x===null||!Y.length)return {p:null,base,n:Y.length,x};
-  const r=modelP(X,Y,lead,x);
-  let xmin=Infinity,xmax=-Infinity;for(const v of X){if(v<xmin)xmin=v;if(v>xmax)xmax=v}
-  return {p:r.p,base:r.base,n:Y.length,x,extrap:x<xmin?'below':x>xmax?'above':null};
-}
+const J=u=>fetch(u,{cache:'no-cache'}).then(r=>r.ok?r.json():null);
+const [jr,pres,lb,ojin,val]=await Promise.all(['data/ibwc/johnson_ranch.json','data/ibwc/presidio.json','data/ibwc/la_boquilla.json','data/ibwc/conchos_ojinaga.json','data/validation.json'].map(J));
+const D=M.bundle({target:jr,presidio:pres,storage:lb});
+const OJ=ojin?M.series(ojin):null;
+const FIRST=D.T.start, LAST=D.T.end;
+$('through').textContent='Johnson Ranch data through '+fmtDY(LAST);
 
 // ---------- state ----------
-const st={asof:LAST,len:7,lo:200,hi:1200};
+const st={asof:LAST,len:7,lo:200,hi:1200,spec:M.DEFAULT_SPEC,recal:true};
+// Recalibration table applies only to the setup it was validated for (default spec, 7-day trips, a validated range).
+function recalTable(){if(!st.recal||!val||st.spec!==val.defaultSpec||st.len!==val.tripDays)return null;const r=val.results[st.lo+'-'+st.hi];return r&&r.recalibrated?r.recalibrated.params:null}
+Object.entries(M.SPECS).forEach(([k,s])=>{const o=document.createElement('option');o.value=k;o.textContent=k+(k===M.DEFAULT_SPEC?' (default)':'');o.title=s.label;$('spec').appendChild(o)});
 function readHash(){const h=new URLSearchParams(location.hash.slice(1));
-  if(h.get('asof')){const [y,m,d]=h.get('asof').split('-').map(Number);if(y)st.asof=Math.min(dn(y,m,d),LAST)}
+  if(h.get('asof')){const n=M.isoToDn(h.get('asof'));if(!isNaN(n))st.asof=Math.max(FIRST+7,Math.min(n,LAST))}
   if(h.get('len'))st.len=Math.max(2,Math.min(14,+h.get('len')||7));
-  if(h.get('lo'))st.lo=+h.get('lo');if(h.get('hi'))st.hi=+h.get('hi');}
-function writeHash(){history.replaceState(null,'','#'+new URLSearchParams({asof:iso(st.asof),len:st.len,lo:st.lo,hi:st.hi}).toString())}
+  if(h.get('lo'))st.lo=+h.get('lo');if(h.get('hi'))st.hi=+h.get('hi');
+  if(h.get('model')&&M.SPECS[h.get('model')])st.spec=h.get('model');
+  if(h.get('recal')==='0')st.recal=false;}
+function writeHash(){const p={asof:M.dnToIso(st.asof),len:st.len,lo:st.lo,hi:st.hi};if(st.spec!==M.DEFAULT_SPEC)p.model=st.spec;if(!st.recal)p.recal=0;history.replaceState(null,'','#'+new URLSearchParams(p).toString())}
 readHash();
-const syncInputs=()=>{$('asof').value=iso(st.asof);$('asof').max=iso(LAST);$('asof').min=iso(FIRST+7);$('len').value=st.len;$('lo').value=st.lo;$('hi').value=st.hi;
-  document.querySelectorAll('#preset button').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.lo===st.lo&&+b.dataset.hi===st.hi))};
-$('asof').onchange=e=>{const [y,m,d]=e.target.value.split('-').map(Number);if(!y)return;st.asof=Math.max(FIRST+7,Math.min(dn(y,m,d),LAST));update(true)};
+function syncInputs(){$('asof').value=M.dnToIso(st.asof);$('asof').max=M.dnToIso(LAST);$('asof').min=M.dnToIso(FIRST+7);$('len').value=st.len;$('lo').value=st.lo;$('hi').value=st.hi;$('spec').value=st.spec;$('recal').checked=st.recal;
+  document.querySelectorAll('#preset button').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.lo===st.lo&&+b.dataset.hi===st.hi))}
+$('asof').onchange=e=>{const n=M.isoToDn(e.target.value);if(isNaN(n))return;st.asof=Math.max(FIRST+7,Math.min(n,LAST));update(true)};
 $('len').onchange=e=>{st.len=Math.max(2,Math.min(14,+e.target.value||7));update(false)};
 $('lo').onchange=e=>{st.lo=+e.target.value;update(false)};
 $('hi').onchange=e=>{st.hi=+e.target.value;update(false)};
+$('spec').onchange=e=>{st.spec=e.target.value;update(true)};
+$('recal').onchange=e=>{st.recal=e.target.checked;update(true)};
 $('latest').onclick=()=>{st.asof=LAST;update(true)};
 document.querySelectorAll('#preset button').forEach(b=>b.onclick=()=>{st.lo=+b.dataset.lo;st.hi=+b.dataset.hi;update(false)});
 
@@ -329,151 +290,144 @@ const HORIZON=150;
 function drawForecast(){
   const svg=$('fc');svg.innerHTML='';
   const W=1000,H=380,m={l:44,r:16,t:14,b:58};const pw=W-m.l-m.r,ph=H-m.t-m.b-22;
-  const ex=toDate(st.asof).getUTCFullYear();
-  const pts=[];for(let k=1;k<=HORIZON;k++){const f=forecast(st.asof,k,st.lo,st.hi,st.len,ex);pts.push({k,t:st.asof+k,...f,act:classify(st.asof+k,st.lo,st.hi,st.len)})}
+  const tab=recalTable();
+  const pts=[];for(let k=1;k<=HORIZON;k++){const f=M.forecast(D,st.spec,st.asof,k,st.lo,st.hi,st.len);if(tab)f.raw=f.p,f.p=M.recalibrate(f.p,k,tab);pts.push({k,t:st.asof+k,...f,act:M.classify(D.T,st.asof+k,st.lo,st.hi,st.len)})}
   const x=k=>m.l+(k-1)/(HORIZON-1)*pw, y=p=>m.t+ph-p*ph;
-  // low-skill zone
   el(svg,'rect',{x:x(91),y:m.t,width:x(HORIZON)-x(91),height:ph,fill:'var(--grid)','fill-opacity':.5});
-  const lz=el(svg,'text',{x:x(91)+6,y:m.t+14,class:'alabel'});lz.textContent='3+ months out: ≈ no skill beyond the calendar';
+  const lz=el(svg,'text',{x:x(91)+6,y:m.t+14,class:'alabel'});lz.textContent='3+ months out: little skill beyond the calendar';
   [0,.25,.5,.75,1].forEach(v=>{el(svg,'line',{x1:m.l,x2:m.l+pw,y1:y(v),y2:y(v),stroke:'var(--grid)'});const t=el(svg,'text',{x:m.l-6,y:y(v)+4,'text-anchor':'end',class:'tick'});t.textContent=pct(v)});
-  // month ticks
-  for(let k=1;k<=HORIZON;k++){const d=toDate(st.asof+k);if(d.getUTCDate()===1){el(svg,'line',{x1:x(k),x2:x(k),y1:m.t,y2:m.t+ph,stroke:'var(--grid)'});const t=el(svg,'text',{x:x(k)+4,y:m.t+ph+14,class:'tick'});t.textContent=MN[d.getUTCMonth()]+(d.getUTCMonth()===0?' '+d.getUTCFullYear():'')}}
+  for(let k=1;k<=HORIZON;k++){const d=M.toDate(st.asof+k);if(d.getUTCDate()===1){el(svg,'line',{x1:x(k),x2:x(k),y1:m.t,y2:m.t+ph,stroke:'var(--grid)'});const t=el(svg,'text',{x:x(k)+4,y:m.t+ph+14,class:'tick'});t.textContent=MN[d.getUTCMonth()]+(d.getUTCMonth()===0?' '+d.getUTCFullYear():'')}}
   const ax=el(svg,'text',{x:m.l,y:H-4,class:'tick'});ax.textContent='Trip start date → (lead time from '+fmtDY(st.asof)+')';
-  // base rate + model
-  el(svg,'polyline',{points:pts.map(p=>x(p.k)+','+y(p.base)).join(' '),fill:'none',stroke:'var(--clim)','stroke-width':1.5,'stroke-dasharray':'5 4'});
+  el(svg,'polyline',{points:pts.filter(p=>p.base!=null).map(p=>x(p.k)+','+y(p.base)).join(' '),fill:'none',stroke:'var(--clim)','stroke-width':1.5,'stroke-dasharray':'5 4'});
   const mp=pts.filter(p=>p.p!==null);
   if(mp.length){
     el(svg,'polyline',{points:mp.filter(p=>p.k<=91).map(p=>x(p.k)+','+y(p.p)).join(' '),fill:'none',stroke:'var(--model)','stroke-width':2.5,'stroke-linejoin':'round'});
     el(svg,'polyline',{points:mp.filter(p=>p.k>=91).map(p=>x(p.k)+','+y(p.p)).join(' '),fill:'none',stroke:'var(--model)','stroke-width':2,'stroke-opacity':.45,'stroke-linejoin':'round'});
   }
-  // actual-outcome strip (hindcast)
   const sy=m.t+ph+22;const hasAct=pts.some(p=>p.act);
-  if(hasAct){const cw=pw/(HORIZON-1);pts.forEach(p=>{if(p.act)el(svg,'rect',{x:x(p.k)-cw/2,y:sy,width:cw+.5,height:10,fill:`var(--${p.act==='ideal'?'ideal':p.act})`})});
+  if(hasAct){const cw=pw/(HORIZON-1);pts.forEach(p=>{if(p.act)el(svg,'rect',{x:x(p.k)-cw/2,y:sy,width:cw+.5,height:10,fill:`var(--${p.act})`})});
     const t=el(svg,'text',{x:m.l-6,y:sy+9,'text-anchor':'end',class:'tick'});t.textContent='actual';}
   $('actualLegend').style.display=hasAct?'':'none';
-  // hover
   const cross=el(svg,'line',{y1:m.t,y2:m.t+ph,stroke:'var(--ink2)',visibility:'hidden'});
   const dot=el(svg,'circle',{r:4.5,fill:'var(--model)',stroke:'var(--surface)','stroke-width':2,visibility:'hidden'});
-  const hit=el(svg,'rect',{x:m.l,y:m.t,width:pw,height:ph+34,fill:'transparent'});const tip=$('tip');
+  const hit=el(svg,'rect',{x:m.l,y:m.t,width:pw,height:ph+34,fill:'transparent'});
   const lab={ideal:'ideal (300–1,000)',ok:'runnable',low:'too low',high:'too high'};
   hit.addEventListener('pointermove',ev=>{const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;const q=pt.matrixTransform(svg.getScreenCTM().inverse());
     let k=Math.round((q.x-m.l)/pw*(HORIZON-1))+1;k=Math.max(1,Math.min(HORIZON,k));const p=pts[k-1];
     cross.setAttribute('x1',x(k));cross.setAttribute('x2',x(k));cross.setAttribute('visibility','visible');
     if(p.p!==null){dot.setAttribute('cx',x(k));dot.setAttribute('cy',y(p.p));dot.setAttribute('visibility','visible')}
-    tip.innerHTML=`<b>Start ${fmtDY(p.t)}</b> <span style="color:var(--muted)">(${k} days out)</span>`+
-      `<div class="row"><span>Model</span><span class="v">${p.p===null?'—':pct(p.p)}</span></div>`+
-      `<div class="row"><span>Base rate</span><span class="v">${pct(p.base)}</span></div>`+
-      `<div class="row"><span>Training pairs</span><span class="v">${p.n}</span></div>`+
-      (p.act?`<div class="row"><span>Actually</span><span class="v">${lab[p.act]}</span></div>`:'');
-    tip.style.display='block';const tw=tip.offsetWidth,th=tip.offsetHeight;let lx=ev.clientX+14,ly=ev.clientY-th-10;if(lx+tw>innerWidth-8)lx=ev.clientX-tw-14;if(ly<8)ly=ev.clientY+14;tip.style.left=lx+'px';tip.style.top=ly+'px'});
-  hit.addEventListener('pointerleave',()=>{tip.style.display='none';cross.setAttribute('visibility','hidden');dot.setAttribute('visibility','hidden')});
+    showTip(ev,`<b>Start ${fmtDY(p.t)}</b> <span style="color:var(--muted)">(${k} days out)</span>`+
+      `<div class="row"><span>Model</span><span class="v">${pct(p.p)}</span></div>`+(p.raw!=null?`<div class="row"><span style="color:var(--muted)">before calibration</span><span class="v" style="color:var(--muted)">${pct(p.raw)}</span></div>`:'')+`<div class="row"><span>Base rate</span><span class="v">${pct(p.base)}</span></div>`+
+      `<div class="row"><span>Training pairs</span><span class="v">${p.n}</span></div>`+(p.act?`<div class="row"><span>Actually</span><span class="v">${lab[p.act]}</span></div>`:''))});
+  hit.addEventListener('pointerleave',()=>{hideTip();cross.setAttribute('visibility','hidden');dot.setAttribute('visibility','hidden')});
   return pts;
 }
 
+function pctRank(get,d,years,exclude){const x=get(d);if(x==null)return null;const o=years.filter(y=>y!==exclude).map(y=>get(M.sameDay(y,d))).filter(v=>v!=null);return {x,below:o.filter(v=>v<x).length,n:o.length}}
+const rankTxt=(r,what)=>r.below===0?`Lowest of ${r.n+1}${what?' '+what:''} (record low).`:r.below===r.n?`Highest of ${r.n+1}${what?' '+what:''}.`:`Higher than ${r.below} of ${r.n} other${what?' '+what:''}.`;
 function headline(pts){
-  const x=predictor(st.asof);
-  // where does current baseflow sit vs other years on this date?
-  const others=YEARS.filter(y=>y!==toDate(st.asof).getUTCFullYear()).map(y=>predictor(sameDay(y,st.asof))).filter(v=>v!==null);
-  const below=others.filter(v=>v<x).length;
-  const minNow=x===null?null:Math.pow(10,x);
-  // best non-overlapping start dates within 90 days
+  const yr=M.yearOf(st.asof);
+  const bf=d=>{const x=M.xBase(D.T,d);return x==null?null:Math.pow(10,x)};
+  const all=pctRank(bf,st.asof,D.years,yr), rec=pctRank(bf,st.asof,D.years.filter(y=>y>=yr-20&&y<yr),yr);
   const cand=pts.filter(p=>p.k<=90&&p.p!==null).sort((a,b)=>b.p-a.p);const best=[];
   for(const c of cand){if(best.every(b=>Math.abs(b.t-c.t)>=7))best.push(c);if(best.length===3)break}
-  const nearMax=Math.max(...pts.filter(p=>p.k<=30&&p.p!==null).map(p=>p.p));
+  const near=pts.filter(p=>p.k<=30&&p.p!==null).map(p=>p.p);const nearMax=near.length?Math.max(...near):null;
   const tiles=[
-    ['Baseflow now',minNow===null?'—':cfs(minNow)+' cfs',`Lowest daily mean in the 7 days to ${fmtD(st.asof)}. Higher than ${below} of ${others.length} other years on this date.`],
-    ['Best chance, next 30 days',isFinite(nearMax)?pct(nearMax):'—',`For a ${st.len}-day trip that stays within ${st.lo.toLocaleString()}–${st.hi.toLocaleString()} cfs every day.`],
+    ['Baseflow now (Johnson Ranch)',all?cfs(all.x)+' cfs':'—',all?`Lowest daily mean in the 7 days to ${fmtD(st.asof)}. ${rankTxt(all,'years on this date')}${rec&&rec.n&&all.below>0?` Of the previous 20 years, higher than ${rec.below}.`:''}`:''],
+    ['Best chance, next 30 days',pct(nearMax),`For a ${st.len}-day trip that stays within ${st.lo.toLocaleString()}–${st.hi.toLocaleString()} cfs every day.`],
     ['Best start dates, next 90 days',best.length?best.map(b=>fmtD(b.t)).join(' · '):'—',best.length?best.map(b=>pct(b.p)).join(' · ')+' (7+ days apart)':''],
   ];
-  $('headline').innerHTML=tiles.map(([k,v,d])=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
+  let h=tiles.map(([k,v,d])=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
   const ext=pts.find(p=>p.k===30)?.extrap;
-  if(ext)$('headline').innerHTML+=`<div class="warn" style="grid-column:1/-1;margin:0"><b>Outside the training range.</b> Baseflow right now is ${ext==='below'?'lower':'higher'} than on this date in any training year, so the model is extrapolating. It's still directionally right (${ext==='below'?'a near-dry river rarely recovers to trip levels without a large, sustained release':'very high water takes time to drop'}), but treat the exact percentages loosely.</div>`;
-  const hind=st.asof<LAST-HORIZON?'This is a hindcast: that year was held out of training, so the model never saw what happened. The colored strip under the chart shows what actually happened.':
-    (st.asof<LAST?'Hindcast: that year was held out of training. The strip shows what happened, as far as data exists.':'Forecast from the latest data. The strip fills in as days pass.');
-  $('fcnote').textContent=hind+' Try an as-of date like Oct 1, 2016 to see what the model would have said before your 2016 trip.';
+  if(ext)h+=`<div class="warn" style="grid-column:1/-1;margin:0"><b>Outside the training range.</b> Baseflow right now is ${ext==='below'?'lower':'higher'} than anything in the training sample for this date, so the model is extrapolating. Treat exact percentages loosely.</div>`;
+  $('headline').innerHTML=h;
+  $('fcnote').textContent=(st.asof<LAST?'Hindcast: '+yr+' was held out of training, so the model never saw what happened. The strip under the chart shows the actual outcome. ':'Forecast from the latest data. The strip fills in as days pass. ')+'Try an as-of date like Oct 1, 2016 to see what the model would have said before the 2016 trip.'+(st.recal&&!recalTable()?' Calibration correction is off for this setup: it was only validated for the default model, 7-day trips, and the 200–1,200 or 300–1,000 ranges.':'');
+}
+
+function upstream(){
+  const d=st.asof, yr=M.yearOf(d);
+  const mean3=(S,d)=>{let s=0,n=0;for(let i=0;i<3;i++){const v=S.get(d-i);if(v!==undefined){s+=v;n++}}return n?s/n:null};
+  const tiles=[];
+  const pr=pctRank(dd=>mean3(D.P,dd),d,D.years,yr);
+  tiles.push(['Presidio, below the Conchos',pr?cfs(pr.x)+' cfs':'—',pr?`3-day mean to ${fmtD(d)}. ${rankTxt(pr,'years on this date')} It reaches Johnson Ranch in roughly 1–3 days.`:'']);
+  if(OJ){const oj=pctRank(dd=>mean3(OJ,dd),d,D.years.filter(y=>y>=1955),yr);tiles.push(['Rio Conchos near Ojinaga',oj?cfs(oj.x)+' cfs':'—',oj?`3-day mean. ${rankTxt(oj,'years (1955+) on this date')}`:''])}
+  const sv=M.xStore(D.R,d);if(sv!=null){const r=pctRank(dd=>{const v=M.xStore(D.R,dd);return v==null?null:v*1000},d,D.years.filter(y=>y>=1993),yr);
+    tiles.push(['La Boquilla storage',Math.round(sv*1000).toLocaleString()+' million m³',r?`Largest Conchos reservoir. ${rankTxt(r,'years (1993+) on this date')} The record high is about 2,940.`:''])}
+  else tiles.push(['La Boquilla storage','—','No storage data for this date (the record starts in 1993).']);
+  $('upstream').innerHTML=tiles.map(([k,v,dd])=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${dd}</div></div>`).join('');
 }
 
 // ---------- climatology ----------
 function drawClim(){
-  const svg=$('clim');svg.innerHTML='';
-  const W=1000,m={l:44,r:10,t:10},pw=W-m.l-m.r,lineH=150;
-  const yrs=YEARS.slice();const rowH=16,gy0=m.t+lineH+30;
-  const H=gy0+yrs.length*rowH+24;svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
-  const N=366,x=i=>m.l+i/(N-1)*pw,cw=pw/(N-1);
-  // share by start day-of-year (leap-year index)
-  const share=[];
-  for(let i=0;i<N;i++){let ok=0,n=0;const mo=0;const ref=dn(2016,1,1)+i;
-    for(const y of yrs){if(i===59&&!(y%4===0))continue;const t=sameDay(y,ref);const o=outcome(t,st.lo,st.hi,st.len);if(o===null)continue;n++;ok+=o}
-    share.push(n?ok/n:null)}
-  const y=p=>m.t+lineH-p*lineH;
-  [0,.25,.5,.75].forEach(v=>{el(svg,'line',{x1:m.l,x2:m.l+pw,y1:y(v),y2:y(v),stroke:'var(--grid)'});const t=el(svg,'text',{x:m.l-6,y:y(v)+4,'text-anchor':'end',class:'tick'});t.textContent=pct(v)});
-  let d='';share.forEach((p,i)=>{if(p!==null)d+=(d?' L':'M')+x(i)+','+y(p)});
-  el(svg,'path',{d,fill:'none',stroke:'var(--model)','stroke-width':2});
-  // months
-  let acc=0;[31,29,31,30,31,30,31,31,30,31,30,31].forEach((n,j)=>{el(svg,'line',{x1:x(acc),x2:x(acc),y1:m.t,y2:gy0+yrs.length*rowH,stroke:'var(--grid)'});const t=el(svg,'text',{x:x(acc)+3,y:m.t+lineH+18,class:'tick'});t.textContent=MN[j];acc+=n});
-  // grid rows
-  const g=el(svg,'g',{});
-  yrs.forEach((yr,r)=>{const t=el(svg,'text',{x:m.l-6,y:gy0+r*rowH+11,'text-anchor':'end',class:'tick'});t.textContent=yr;
-    for(let i=0;i<N;i++){if(i===59&&yr%4!==0)continue;const day=sameDay(yr,dn(2016,1,1)+i);const c=classify(day,st.lo,st.hi,st.len);
-      el(g,'rect',{x:x(i)-cw/2,y:gy0+r*rowH,width:cw+.6,height:rowH-3,fill:`var(--${c?(c==='ideal'?'ideal':c):'none'})`})}});
-  // trip marker 2016 Nov 12
-  const r16=yrs.indexOf(2016);if(r16>=0){const i=dn(2016,11,12)-dn(2016,1,1);el(svg,'rect',{x:x(i)-cw,y:gy0+r16*rowH-2,width:cw*3,height:rowH+1,fill:'none',stroke:'var(--ink)','stroke-width':1.5,rx:2});
-    const t=el(svg,'text',{x:x(i)+cw*3,y:gy0+r16*rowH+11,class:'alabel'});t.textContent='your 2016 trip'}
-  // hover
-  const tip=$('tip');const lab={ideal:'ideal the whole trip',ok:'runnable the whole trip',low:'too low on at least one day',high:'too high on at least one day'};
-  const hit=el(svg,'rect',{x:m.l,y:m.t,width:pw,height:gy0+yrs.length*rowH-m.t,fill:'transparent'});
-  hit.addEventListener('pointermove',ev=>{const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;const q=pt.matrixTransform(svg.getScreenCTM().inverse());
-    const i=Math.max(0,Math.min(N-1,Math.round((q.x-m.l)/pw*(N-1))));const ref=dn(2016,1,1)+i;let h=`<b>Start ${fmtD(ref)}</b>`;
-    if(q.y<gy0){h+=`<div class="row"><span>Runnable in</span><span class="v">${share[i]===null?'—':pct(share[i])} of years</span></div>`}
-    else{const r=Math.floor((q.y-gy0)/rowH);const yr=yrs[r];if(yr){const day=sameDay(yr,ref);const c=classify(day,st.lo,st.hi,st.len);
-      let lo=Infinity,hi=-Infinity;for(let k=0;k<st.len;k++){const v=Q.get(day+k);if(v!==undefined){lo=Math.min(lo,v);hi=Math.max(hi,v)}}
-      h=`<b>${fmtDY(day)}</b> start, ${st.len} days<div class="row"><span>${c?lab[c]:'no data'}</span></div>`+(isFinite(lo)?`<div class="row"><span>Daily means</span><span class="v">${cfs(lo)}–${cfs(hi)} cfs</span></div>`:'')}}
-    tip.innerHTML=h;tip.style.display='block';const tw=tip.offsetWidth,th=tip.offsetHeight;let lx=ev.clientX+14,ly=ev.clientY-th-10;if(lx+tw>innerWidth-8)lx=ev.clientX-tw-14;if(ly<8)ly=ev.clientY+14;tip.style.left=lx+'px';tip.style.top=ly+'px'});
-  hit.addEventListener('pointerleave',()=>tip.style.display='none');
-  // monthly any-window table
-  let th='<tr><th>Month</th><th>Years with ≥1 runnable start</th><th>Share</th><th>Avg runnable start dates</th></tr>';
-  MN.forEach((name,j)=>{let any=0,n=0,cnt=0;
-    for(const y of yrs){const a=dn(y,j+1,1),b=dn(j===11?y+1:y,j===11?1:j+2,1);let known=true,ok=0;
-      for(let t=a;t<b;t++){const o=outcome(t,st.lo,st.hi,st.len);if(o===null){known=false;break}ok+=o}
-      if(!known)continue;n++;cnt+=ok;if(ok)any++}
-    th+=`<tr><td>${name}</td><td>${any} of ${n}</td><td>${n?pct(any/n):'—'}</td><td>${n?(cnt/n).toFixed(1):'—'}</td></tr>`});
+  const N=366,ref0=M.dn(2016,1,1);const yrs=D.years.slice().reverse();const lastY=M.yearOf(LAST);
+  const grid=yrs.map(y=>{const row=new Array(N);for(let i=0;i<N;i++){row[i]=(i===59&&!(y%4===0))?undefined:M.classify(D.T,M.sameDay(y,ref0+i),st.lo,st.hi,st.len)}return row});
+  const share=(ys)=>{const out=[];for(let i=0;i<N;i++){let ok=0,n=0;ys.forEach(y=>{const r=grid[yrs.indexOf(y)];const c=r[i];if(c==null)return;n++;if(c==='ok'||c==='ideal')ok++});out.push(n>=5?ok/n:null)}return out};
+  const recentYs=D.years.filter(y=>y>lastY-21&&y<=lastY);
+  const sAll=share(D.years),sRec=share(recentYs);
+  // line chart
+  const svg=$('climline');svg.innerHTML='';const W=1000,H=200,m={l:44,r:10,t:10,b:22},pw=W-m.l-m.r,ph=H-m.t-m.b;
+  const x=i=>m.l+i/(N-1)*pw,y=p=>m.t+ph-p*ph;
+  [0,.25,.5,.75,1].forEach(v=>{el(svg,'line',{x1:m.l,x2:m.l+pw,y1:y(v),y2:y(v),stroke:'var(--grid)'});const t=el(svg,'text',{x:m.l-6,y:y(v)+4,'text-anchor':'end',class:'tick'});t.textContent=pct(v)});
+  let acc=0;[31,29,31,30,31,30,31,31,30,31,30,31].forEach((n,j)=>{el(svg,'line',{x1:x(acc),x2:x(acc),y1:m.t,y2:m.t+ph,stroke:'var(--grid)'});const t=el(svg,'text',{x:x(acc)+3,y:H-6,class:'tick'});t.textContent=MN[j];acc+=n});
+  const path=s=>{let d='';s.forEach((p,i)=>{if(p!=null)d+=(d?' L':'M')+x(i)+','+y(p)});return d};
+  el(svg,'path',{d:path(sAll),fill:'none',stroke:'var(--clim)','stroke-width':1.5,'stroke-dasharray':'5 4'});
+  el(svg,'path',{d:path(sRec),fill:'none',stroke:'var(--model)','stroke-width':2});
+  const hit=el(svg,'rect',{x:m.l,y:m.t,width:pw,height:ph,fill:'transparent'});
+  hit.addEventListener('pointermove',ev=>{const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;const q=pt.matrixTransform(svg.getScreenCTM().inverse());const i=Math.max(0,Math.min(N-1,Math.round((q.x-m.l)/pw*(N-1))));
+    showTip(ev,`<b>Start ${fmtD(ref0+i)}</b><div class="row"><span>Last 20 years</span><span class="v">${pct(sRec[i])}</span></div><div class="row"><span>All years since 1936</span><span class="v">${pct(sAll[i])}</span></div>`)});
+  hit.addEventListener('pointerleave',hideTip);
+  // canvas grid
+  const cv=$('grid');const rowH=6,labW=44,top=4;const cssW=cv.parentElement.clientWidth>=680?cv.parentElement.clientWidth:680;const cssH=top+yrs.length*rowH+4;
+  const dpr=window.devicePixelRatio||1;cv.width=cssW*dpr;cv.height=cssH*dpr;cv.style.height=cssH+'px';const ctx=cv.getContext('2d');ctx.scale(dpr,dpr);
+  const gx=i=>labW+i*(cssW-labW-10)/N,cw=(cssW-labW-10)/N;
+  const col={ideal:css('--ideal'),ok:css('--ok'),low:css('--low'),high:css('--high')},none=css('--none');
+  ctx.font='10px system-ui,sans-serif';ctx.fillStyle=css('--muted');ctx.textAlign='right';ctx.textBaseline='middle';
+  yrs.forEach((yv,r)=>{const row=grid[r];for(let i=0;i<N;i++){const c=(i===59&&!(yv%4===0))?row[58]:row[i];ctx.fillStyle=c?col[c]:none;ctx.fillRect(gx(i),top+r*rowH,cw+.4,rowH-1)}
+    if(yv%10===0||r===0){ctx.fillStyle=css('--muted');ctx.fillText(String(yv),labW-6,top+r*rowH+rowH/2)}});
+  const r16=yrs.indexOf(2016);if(r16>=0){const i=M.dn(2016,11,12)-ref0;ctx.strokeStyle=css('--ink');ctx.lineWidth=1.5;ctx.strokeRect(gx(i)-1,top+r16*rowH-1.5,cw*3+2,rowH+2)}
+  cv.onpointermove=ev=>{const b=cv.getBoundingClientRect();const px=(ev.clientX-b.left)*(cssW/b.width),py=ev.clientY-b.top;const r=Math.floor((py-top)/rowH),i=Math.floor((px-labW)/cw);
+    if(r<0||r>=yrs.length||i<0||i>=N){hideTip();return}const yv=yrs[r];const day=M.sameDay(yv,ref0+i);const c=grid[r][i];
+    let lo=Infinity,hi=-Infinity;for(let k=0;k<st.len;k++){const v=D.T.get(day+k);if(v!==undefined){lo=Math.min(lo,v);hi=Math.max(hi,v)}}
+    const lab={ideal:'ideal the whole trip',ok:'runnable the whole trip',low:'too low on at least one day',high:'too high on at least one day'};
+    showTip(ev,`<b>${fmtDY(day)}</b> start, ${st.len} days<div class="row"><span>${c?lab[c]:'no data'}</span></div>`+(isFinite(lo)?`<div class="row"><span>Daily means</span><span class="v">${cfs(lo)}–${cfs(hi)} cfs</span></div>`:'')+(yv===2016&&i>=M.dn(2016,11,12)-ref0&&i<=M.dn(2016,11,14)-ref0?'<div class="row"><span>the 2016 trip</span></div>':''))};
+  cv.onpointerleave=hideTip;
+  // monthly table
+  let th='<tr><th>Month</th><th>All years: ≥1 runnable start</th><th>Share</th><th>Last 20 years</th><th>Share</th></tr>';
+  MN.forEach((name,j)=>{const cnt=ys=>{let any=0,n=0;for(const yv of ys){const a=M.dn(yv,j+1,1),b=M.dn(j===11?yv+1:yv,j===11?1:j+2,1);let known=true,ok=0;
+      for(let t=a;t<b;t++){const o=M.outcome(D.T,t,st.lo,st.hi,st.len);if(o===null){known=false;break}ok+=o}if(!known)continue;n++;if(ok)any++}return [any,n]};
+    const [a1,n1]=cnt(D.years),[a2,n2]=cnt(recentYs);
+    th+=`<tr><td>${name}</td><td>${a1} of ${n1}</td><td>${n1?pct(a1/n1):'—'}</td><td>${a2} of ${n2}</td><td>${n2?pct(a2/n2):'—'}</td></tr>`});
   $('months').innerHTML=th;
 }
 
-// ---------- cross-validation ----------
-let cvToken=0;
-async function crossValidate(){
-  const my=++cvToken;$('cvnote').textContent='Running cross-validation…';
-  const LEADS=[7,14,30,45,60,90,120];const DOYS=[];for(let i=0;i<366;i+=10)DOYS.push(i);
-  const acc={};LEADS.forEach(l=>acc[l]={all:[0,0,0],fall:[0,0,0]});
-  const preds=[];const ref0=dn(2016,1,1);
-  const yrs=YEARS.filter(y=>y<toDate(LAST).getUTCFullYear()||true);
-  for(const doy of DOYS){
-    await new Promise(r=>setTimeout(r,0));if(my!==cvToken)return;
-    for(const lead of LEADS){
-      for(const y of yrs){const asof=sameDay(y,ref0+doy);const o=outcome(asof+lead,st.lo,st.hi,st.len);if(o===null)continue;const x=predictor(asof);if(x===null)continue;
-        const {X,Y}=sample(asof,lead,st.lo,st.hi,st.len,y);if(Y.length<30)continue;const r=modelP(X,Y,lead,x,15);
-        const p=r.p,b=r.base,ov=o?1:0;
-        const fall=doy>=212&&doy<=334;
-        for(const key of fall?['all','fall']:['all']){acc[lead][key][0]+=(p-ov)**2;acc[lead][key][1]+=(b-ov)**2;acc[lead][key][2]++}
-        preds.push([p,ov]);
-      }}
-  }
-  const ss=a=>a[2]?1-a[0]/a[1]:null;const f=v=>v===null?'—':(v>=0?'+':'')+v.toFixed(2);
-  let h='<tr><th>Lead time</th><th>Skill, all issue dates</th><th>Skill, issued Aug–Nov</th><th>Forecasts scored</th></tr>';
-  LEADS.forEach(l=>{h+=`<tr><td>${l} days</td><td>${f(ss(acc[l].all))}</td><td>${f(ss(acc[l].fall))}</td><td>${acc[l].all[2]}</td></tr>`});
+// ---------- validation tables ----------
+const vs={target:'200-1200',scheme:'forward',season:'fall'};
+function segWire(id,key){document.querySelectorAll('#'+id+' button').forEach(b=>b.onclick=()=>{vs[key]=b.dataset.k;document.querySelectorAll('#'+id+' button').forEach(x=>x.setAttribute('aria-pressed',x===b));drawValidation()})}
+segWire('vTarget','target');segWire('vScheme','scheme');segWire('vSeason','season');
+function drawValidation(){
+  if(!val){$('skill').innerHTML='<tr><td>Validation results not available.</td></tr>';return}
+  const R=val.results[vs.target][vs.scheme];const RCk=val.results[vs.target].recalibrated?.spec;const L=val.leads;const f=v=>v==null?'—':(v>=0?'+':'')+v.toFixed(2);
+  let h='<tr><th>Model</th>'+L.map(k=>`<th>${k} d</th>`).join('')+'<th style="text-align:left">Description</th></tr>';
+  Object.keys(val.specs).forEach(s=>{const r=R.skill[s];const cur=s===st.spec&&!(st.recal&&RCk===s&&vs.scheme==='forward');
+    h+=`<tr style="${cur?'background:var(--chip);font-weight:650':''}"><td>${s}${s===val.selection?.best?' ★':''}</td>`+L.map(k=>`<td>${f(vs.season==='fall'?r[k].fall_bss:r[k].bss)}</td>`).join('')+`<td style="text-align:left;white-space:normal;color:var(--ink2)">${val.specs[s]}</td></tr>`});
+  const RC=val.results[vs.target].recalibrated;
+  if(RC&&vs.scheme==='forward'){h+=`<tr style="${st.spec===RC.spec&&st.recal?'background:var(--chip);font-weight:650':''}"><td>${RC.spec} + calibration</td>`+L.map(k=>`<td>${f(vs.season==='fall'?RC.skill[k].fall_bss:RC.skill[k].bss)}</td>`).join('')+`<td style="text-align:left;white-space:normal;color:var(--ink2)">The model in use by default: ${RC.spec} with per-lead Platt recalibration. For each year, the correction is fit on the other years' forward forecasts.</td></tr>`}
+  else if(RC)h+=`<tr><td colspan="${L.length+2}" style="text-align:left;color:var(--muted);white-space:normal">The recalibrated model is scored under Forward only, because its correction is fit on forward-chained forecasts.</td></tr>`;
   $('skill').innerHTML=h;
-  const bins=[[0,.1],[.1,.3],[.3,.5],[.5,.7],[.7,.9],[.9,1.01]];
+  const useRC=RC&&st.recal&&st.spec===RC.spec&&vs.scheme==='forward';
+  const C=useRC?RC.calibration:(R.calibration[st.spec]||[]);
+  $('calibTitle').textContent=useRC?'with calibration correction':(st.spec+', no correction');
   let c='<tr><th>Model said</th><th>Forecasts</th><th>Mean forecast</th><th>Actually runnable</th></tr>';
-  bins.forEach(([a,b])=>{const s=preds.filter(p=>p[0]>=a&&p[0]<b);if(!s.length)return;const mf=s.reduce((t,p)=>t+p[0],0)/s.length,ob=s.reduce((t,p)=>t+p[1],0)/s.length;
-    c+=`<tr><td>${Math.round(a*100)}–${Math.min(100,Math.round(b*100))}%</td><td>${s.length}</td><td>${pct(mf)}</td><td>${pct(ob)}</td></tr>`});
+  C.forEach(b=>{if(!b.n)return;c+=`<tr><td>${Math.round(b.bin[0]*100)}–${Math.round(b.bin[1]*100)}%</td><td>${b.n}</td><td>${pct(b.mean_p)}</td><td>${pct(b.observed)}</td></tr>`});
   $('calib').innerHTML=c;
-  $('cvnote').textContent=`${preds.length.toLocaleString()} out-of-sample forecasts, issued every 10 days across the year for every year in the record, for the current trip length (${st.len} days) and range (${st.lo}–${st.hi} cfs). Forecasts at nearby dates share information, so treat differences under about ±0.05 as noise.`;
+  const n=R.skill[st.spec][L[1]].n;const recNote=st.recal?'':' Calibration correction is switched off above.';
+  $('vnote').textContent=`★ = chosen by the pre-set rule (${val.selection?.metric}). About ${n} scored forecasts per lead time (18 years × ~37 issue dates). Forecasts at nearby dates share information, so differences under about ±0.03 are noise. Generated ${val.generated.slice(0,10)} in ${val.seconds}s by scripts/validate.mjs.`+(st.len!==7?' Note: validation is for 7-day trips; you have a different length selected.':'')+recNote;
 }
 
-function update(asofOnly){syncInputs();writeHash();const pts=drawForecast();headline(pts);if(!asofOnly){drawClim();crossValidate()}}
-syncInputs();update(false);
+function update(asofOnly){syncInputs();writeHash();const pts=drawForecast();headline(pts);upstream();drawValidation();if(!asofOnly)drawClim()}
+update(false);
 window.addEventListener('hashchange',()=>{readHash();update(false)});
+let rz;window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(drawClim,200)});
 })();
 </script>
 </body>

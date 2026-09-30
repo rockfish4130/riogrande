@@ -1,0 +1,42 @@
+name: Validate model
+
+# Re-runs the cross-validation in scripts/validate.mjs (same model.js the planner uses)
+# and commits data/validation.json. Weekly, whenever the model changes, or on demand.
+on:
+  schedule:
+    - cron: "41 13 * * 1"   # Mondays, after the daily data update
+  push:
+    branches: [main]
+    paths: ["model.js", "scripts/validate.mjs"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Cross-validate all model specs
+        run: node scripts/validate.mjs
+      - name: Commit if changed
+        run: |
+          git add data/validation.json
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update model validation ($(jq -r .selection.best data/validation.json) best)"
+          git pull --rebase origin main
+          git push

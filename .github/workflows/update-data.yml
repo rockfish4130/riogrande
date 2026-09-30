@@ -32,6 +32,9 @@ jobs:
           else
             python scripts/update_data.py
           fi
+      - name: Pull IBWC long-record series (Johnson Ranch, Presidio, Conchos, La Boquilla)
+        continue-on-error: true   # the portal is flaky; never block the USGS update
+        run: python scripts/update_ibwc.py
       - name: Commit if changed
         run: |
           git add data
@@ -42,4 +45,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
           git commit -m "Update flow data ($(jq -r .through data/index.json))"
+          git pull --rebase origin main
           git push
