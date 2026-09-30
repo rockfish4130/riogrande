@@ -85,7 +85,7 @@ summary{cursor:pointer;color:var(--ink2)}
 <div class="wrap">
   <nav class="tabs"><a href="./">Flow chart</a><a href="planner.html" aria-current="page">Trip planner</a></nav>
   <h1>Big Bend canoe trip planner</h1>
-  <p class="sub">How likely is a runnable week, Colorado Canyon through Santa Elena Canyon? It's a statistical model trained on every season since 2007 at USGS 08374550, Rio Grande near Castolon. Everything is computed in your browser from the same data the flow chart uses. The full method, assumptions and validation are further down this page.</p>
+  <p class="sub">How likely is a runnable week, Colorado Canyon through Santa Elena Canyon? It's a statistical model trained on every season since 2007 at USGS 08374550, Rio Grande near Castolon. Everything is computed in your browser from the same data the flow chart uses. The full method, assumptions and validation are further down this page. Want to build on it? Grab the <a href="#build">full-context file</a>.</p>
 
   <div class="card">
     <div class="controls">
@@ -172,7 +172,7 @@ summary{cursor:pointer;color:var(--ink2)}
 
     <h3>6. What's not in the model (yet)</h3>
     <ul>
-      <li><b>Rio Conchos reservoir storage</b> (La Boquilla, Luis L. León, and others). Conchos water is what sustains fall flow, so this is probably the single most useful missing input at 2–4 month leads. The storage records are published by CONAGUA in Mexico, and there isn't yet a clean feed for them.</li>
+      <li><b>Rio Conchos reservoir storage</b> (La Boquilla, Luis L. León, and others). Conchos water is what sustains fall flow, so this is probably the single most useful missing input at 2–4 month leads. The IBWC data portal mirrors CONAGUA's daily storage and release series (La Boquilla since 1993). It isn't in the model yet; see the roadmap in CONTEXT.md.</li>
       <li><b>ENSO (El Niño / La Niña).</b> It's easy to get, but with about 18 seasons, one more predictor is as likely to add noise as signal. It will be tested before it's added.</li>
       <li><b>Weather forecasts and storms.</b> The model knows nothing about rain in the next few days. Flash floods (Sep 25, 2026 peaked at 15,200 cfs; Nov 4, 2016 at 14,600) are the main reason even a good-looking week can fail. Check the <a href="https://water.noaa.gov/gauges/prst2">NWS Presidio forecast</a> in the final week before you go.</li>
       <li><b>Human decisions.</b> Conchos releases are managed, partly around Mexico's delivery obligations under the 1944 US–Mexico Water Treaty. A release decision can change the picture in days, and no model here can see it coming.</li>
@@ -186,10 +186,26 @@ summary{cursor:pointer;color:var(--ink2)}
       <li>If you can be flexible, flexibility helps more than precision. The monthly table shows how often <i>some</i> start date in the month worked.</li>
     </ul>
   </div>
+  <h2 id="build">Build on this</h2>
+  <div class="card prose" style="max-width:none">
+    <p style="margin-top:0"><b>CONTEXT.md</b> is a complete technical handoff for this project: architecture, every data source and its quirks, the model's exact spec and validation numbers, the gauge assumption and the evidence for it, data-access findings (including a 90-year record at Johnson Ranch and the Rio Conchos reservoir series), and a prioritized roadmap. Paste it into your AI tool of choice, or fork the repo and go your own way.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <button class="btn" id="copyCtx" type="button">Copy CONTEXT.md to clipboard</button>
+      <a class="btn" style="text-decoration:none" href="https://raw.githubusercontent.com/rockfish4130/riogrande/main/CONTEXT.md" >Raw file</a>
+      <a class="btn" style="text-decoration:none" href="https://github.com/rockfish4130/riogrande/blob/main/CONTEXT.md">Read on GitHub</a>
+      <a class="btn" style="text-decoration:none" href="https://github.com/rockfish4130/riogrande">Repo</a>
+      <span class="note" id="copyMsg"></span>
+    </div>
+  </div>
   <p class="src">Data: <a href="https://waterdata.usgs.gov/monitoring-location/USGS-08374550/">USGS 08374550</a> · <span id="through"></span> · <a href="https://github.com/rockfish4130/riogrande">source code</a> (<span class="mono">planner.html</span>; the model is plain JavaScript, no libraries)</p>
 </div>
 <div class="tip" id="tip"></div>
 <script>
+// copy CONTEXT.md (independent of the model code, so it works even if data fails to load)
+document.getElementById('copyCtx').onclick=async()=>{const msg=document.getElementById('copyMsg');msg.textContent='Fetching…';
+  try{const t=await (await fetch('https://raw.githubusercontent.com/rockfish4130/riogrande/main/CONTEXT.md',{cache:'no-cache'})).text();
+    await navigator.clipboard.writeText(t);msg.textContent=`Copied (${Math.round(t.length/1000)}k characters). Paste it into your AI tool.`}
+  catch(e){msg.textContent='Copy failed. Use Raw file or Read on GitHub instead.'}};
 (async function(){
 const $=id=>document.getElementById(id);
 const NS='http://www.w3.org/2000/svg';
