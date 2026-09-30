@@ -117,8 +117,10 @@
     'A-h12-1982':{ label: 'Baseflow only, 1982+, 12-yr half-life (fair baseline for rainfall)', up: false, store: false, minYear: 1982, half: 12 },
     'R-h12':     { label: 'Baseflow + Conchos basin rainfall (4-mo anomaly), 1982+, 12-yr half-life', up: false, store: false, extra: ['rain'], minYear: 1982, half: 12 },
     'ER-h12':    { label: 'Baseflow + ENSO + basin rainfall, 1982+, 12-yr half-life', up: false, store: false, extra: ['oni', 'rain'], minYear: 1982, half: 12 },
+    'M-h12':     { label: 'Baseflow + 365-day mean flow (wet/dry regime memory), 1936+, 12-yr half-life', up: false, store: false, extra: ['m365'], minYear: 1936, half: 12 },
+    'AM-h12':    { label: 'Composite: A-h12 to 60 d, blended into M-h12 by 90 d (long-lead memory)', composite: ['A-h12', 'M-h12', 60, 90] },
   };
-  const DEFAULT_SPEC = 'A-h12'; // best forward-chained skill (see data/validation.json .selection)
+  const DEFAULT_SPEC = 'AM-h12'; // A-h12 short leads (best forward skill 3-60 d) + regime memory beyond 60 d; see data/validation.json
 
   // Quadratic baseflow term: full weight to 30 d lead, blended to linear by 60 d.
   const BLEND_A = 30, BLEND_B = 60;
@@ -202,6 +204,14 @@
   /** Forecast P(runnable) for a trip starting at asof+k. */
   function forecast(D, specKey, asof, k, lo, hi, len, opts = {}) {
     const spec = SPECS[specKey];
+    if (spec.composite) { // lead-dependent blend of two specs
+      const [sa, sb, a, b] = spec.composite, w = Math.min(1, Math.max(0, (k - a) / (b - a)));
+      if (w === 0) return forecast(D, sa, asof, k, lo, hi, len, opts);
+      if (w === 1) return forecast(D, sb, asof, k, lo, hi, len, opts);
+      const ra = forecast(D, sa, asof, k, lo, hi, len, opts), rb = forecast(D, sb, asof, k, lo, hi, len, opts);
+      if (ra.p === null || rb.p === null) return ra.p === null ? rb : ra;
+      return { ...ra, p: clamp((1 - w) * ra.p + w * rb.p), base: (1 - w) * ra.base + w * rb.base };
+    }
     const refYear = yearOf(asof);
     const exclude = opts.exclude === undefined ? refYear : opts.exclude;
     const { X, Y, W } = sample(D, spec, asof, k, lo, hi, len, exclude, refYear, opts.maxYear);
@@ -243,6 +253,8 @@
     const T = series(docs.target), P = docs.presidio ? series(docs.presidio) : null, R = docs.storage ? series(docs.storage) : null;
     const years = []; for (let y = yearOf(T.start); y <= yearOf(T.end); y++) years.push(y);
     const aux = {}; if (docs.oni) aux.oni = oniLookup(docs.oni); if (docs.rain) aux.rain = rainLookup(docs.rain);
+    // Regime memory: log10 of mean daily flow at the target gauge over the 365 days ending on d (>=80% coverage).
+    aux.m365 = d => { let s = 0, n = 0; for (let i = 0; i < 365; i++) { const v = T.get(d - i); if (v !== undefined) { s += v; n++; } } return n >= 292 ? Math.log10(Math.max(s / n, 1)) : null; };
     return { T, P, R, years, aux };
   }
 

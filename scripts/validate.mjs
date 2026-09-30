@@ -20,7 +20,7 @@ const D = M.bundle({ target: load('johnson_ranch.json'), presidio: load('presidi
   oni: loadC('oni.json'), rain: loadC('conchos_rain.json') });
 
 const EVAL = [2008, 2025];
-const LEADS = [3, 7, 14, 30, 45, 60, 90, 120];
+const LEADS = [3, 7, 14, 30, 45, 60, 90, 120, 150, 180];
 const EVERY = quick ? 30 : 10;
 const TARGETS = [{ key: '200-1200', lo: 200, hi: 1200 }, { key: '300-1000', lo: 300, hi: 1000 }];
 const LEN = 7;
@@ -123,10 +123,18 @@ out.selection.best = Object.entries(out.selection.scores).sort((a, b) => b[1] - 
 const SWITCH = 0.02;
 out.selection.switchThreshold = SWITCH;
 out.selection.recommended = out.selection.scores[out.selection.best] - out.selection.scores[M.DEFAULT_SPEC] > SWITCH ? out.selection.best : M.DEFAULT_SPEC;
+// Long-lead rule (set before looking at results): the composite AM-h12 is kept only if its mean forward fall
+// skill over leads 90-180 d beats A-h12's by more than SWITCH (short leads are identical by construction).
+const LONG = LEADS.filter(k => k >= 90);
+const lscore = sp => +(LONG.reduce((t, k) => t + out.results['200-1200'].forward.skill[sp][k].fall_bss, 0) / LONG.length).toFixed(3);
+out.longLead = { metric: 'mean forward-chained Brier skill, leads ' + LONG.join('/') + ' d, 200-1200 cfs, issued Aug-Nov',
+  scores: Object.fromEntries(specKeys.map(s => [s, lscore(s)])), rule: 'AM-h12 must beat A-h12 by > ' + SWITCH };
+out.longLead.passes = out.longLead.scores['AM-h12'] - out.longLead.scores['A-h12'] > SWITCH;
 out.seconds = Math.round((Date.now() - t0) / 1000);
 fs.writeFileSync(path.join(ROOT, 'data', 'validation.json'), JSON.stringify(out, null, 1) + '\n');
 console.log(`wrote data/validation.json in ${out.seconds}s`);
 console.log('selection', JSON.stringify(out.selection));
+console.log('longLead', JSON.stringify(out.longLead));
 for (const T of TARGETS) { const r = out.results[T.key].recalibrated; console.log(`\nrecalibrated ${r.spec} ${T.key}: BSS`, LEADS.map(k => r.skill[k].bss.toFixed(2)).join(' '), '| fall', LEADS.map(k => r.skill[k].fall_bss.toFixed(2)).join(' '));
   console.log('  params', JSON.stringify(r.params)); console.log('  calib', r.calibration.filter(c => c.n).map(c => `${c.mean_p}->${c.observed}(${c.n})`).join('  ')); }
 for (const T of TARGETS) for (const sc of ['loyo', 'forward']) {

@@ -135,6 +135,7 @@ A trip starting on day *t* with length *L* (default 7) is **runnable** iff the *
 - `xUp` = log10 of the Presidio (08374200) mean over the 3 days ending on the as-of date. Tested; not in the default.
 - `xStore` = La Boquilla storage in km³ (latest value within 7 days). Tested; not in the default.
 - `oni` (`oniLookup`) = the ONI anomaly for the latest 3-month season *published by* the as-of date. It uses the season ending last month if the as-of day is ≥10, otherwise the one ending two months back. Tested; not in the default.
+- `m365` (built into `bundle`) = log10 of the mean daily flow at the target gauge over the 365 days ending on the as-of date (≥80% coverage). **Used by the default at leads beyond 60 d** (regime memory).
 - `rain` (`rainLookup`) = log((R4 + 10) / (N4 + 10)), where R4 is CHIRPS basin rainfall summed over the 4 most recent months *published by* the as-of date (a month counts as available from the 21st of the following month), and N4 is the 1991–2020 normal for those calendar months. Tested; not in the default.
 
 ### 5.3 Model
@@ -167,6 +168,9 @@ P = σ(β0 + β1·z1 + β2·z1² [+ β·z_up] [+ β·z_store])     z = standardi
 | A-h12-1950 / E-h12 | base / base + ONI | 1950+ | 12 |
 | A-h12-1982 / R-h12 / ER-h12 | base / base + rain / base + ONI + rain | 1982+ | 12 |
 
+| M-h12 | base + m365 | 1936+ | 12 |
+| **AM-h12 (default)** | composite: A-h12 for k ≤ 60 d, linear blend to M-h12 by 90 d, M-h12 beyond | | |
+
 Each added climate input has a baseline trained on exactly the same years (`A-h12-1950`, `A-h12-1982`), so a gain or loss isn't just a side effect of the shorter record.
 
 ### 5.5 Validation (`scripts/validate.mjs`)
@@ -189,7 +193,8 @@ Each added climate input has a baseline trained on exactly the same years (`A-h1
 | A-h12-1982 | 0.318 | | R-h12 (+rain) | 0.254 |
 | A-h12-1950 | 0.316 | | ER-h12 (+both) | 0.227 |
 
-  A-h12-1982 scored highest, but only by 0.002, so under the rule A-h12 stays the default. A-h12, A-h8, B-h12 and B-h8 are all within noise of each other.
+  A-h12-1982 scored highest on this short-lead metric, but only by 0.002, so under the rule A-h12 stays the short-lead model. (M-h12 later scored 0.323, also within the 0.02 threshold.)
+- **Long-lead rule (also fixed in advance):** the composite AM-h12 replaces A-h12 only if its mean forward fall skill over leads 90–180 d beats A-h12's by more than 0.02. `validation.json → longLead` records the result. **It passed: 0.080 vs 0.006.** A-h5 scored 0.11 here but is worse at short leads, so it wasn't adopted; B-h8 scored 0.07. A-h12, A-h8, B-h12 and B-h8 are all within noise of each other.
 
 **Default model skill** (forward, 200–1,200 cfs):
 
@@ -198,6 +203,15 @@ Each added climate input has a baseline trained on exactly the same years (`A-h1
 | A-h12 raw, all year | +0.44 | +0.41 | +0.39 | +0.30 | +0.22 | +0.16 | +0.06 | +0.05 |
 | A-h12 **+ calibration**, all year | +0.46 | +0.43 | +0.40 | +0.31 | +0.24 | +0.21 | +0.13 | +0.11 |
 | A-h12 **+ calibration**, fall | +0.34 | +0.34 | +0.35 | +0.31 | +0.29 | +0.29 | +0.20 | +0.20 |
+
+**Current default AM-h12 + calibration** (forward, 200–1,200). Leads now extend to 150/180 d:
+
+| Lead (d) | 3 | 7 | 14 | 30 | 45 | 60 | 90 | 120 | 150 | 180 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| all year | +0.46 | +0.43 | +0.40 | +0.31 | +0.24 | +0.21 | +0.13 | +0.11 | +0.10 | +0.07 |
+| fall | +0.34 | +0.34 | +0.35 | +0.31 | +0.29 | +0.29 | +0.22 | +0.23 | +0.23 | +0.04 |
+
+For the 300–1,000 "ideal" range, calibrated fall skill is ≈ 0 at 90–120 d and negative at 150–180 d. The planner fades beyond 90 d for that range, and beyond 150 d for the workable range.
 
 The recalibrated skill is scored by leaving out one year from the *recalibration fit* too: the correction applied to year *y* is fit on the other years' forward forecasts. Residual optimism: the correction is fit using years after *y*, so it knows the 2008–2025 regime as a whole.
 
@@ -211,6 +225,7 @@ The recalibrated skill is scored by leaving out one year from the *recalibration
 - **Presidio flow (`xUp`)**: no gain at any lead, including 3 days. Once Johnson Ranch baseflow is known, Presidio adds little for week-long windows, and big upstream pulses are rare on any given issue date. It might still matter for a same-week "go/no-go" at leads of 0–2 days, which weren't scored.
 - **La Boquilla storage (`xStore`)**: slightly *worse*. It forces training to 1993+, which loses 57 years, and its signal (Oct-1 storage terciles → November runnable share 46/58/78%) seems mostly captured by current baseflow already.
 - **No recency weighting** (spec A): good at short leads but negative skill beyond 90 d. The regime has shifted (§7.1 decade table).
+- **Regime memory at long leads (adopted):** m365 helps at 90–150 d because droughts and wet spells last years (e.g. 2021–2026). The 90-day memory didn't help, and 730 days was no better than 365. Nothing tested gives skill at 180 d.
 - **v1 design (2007+ only)**: fine under leave-one-year-out (it learns from future years) but poor under forward chaining (≈ +0.12).
 - **ENSO (ONI)**: −0.01 to −0.03 vs its same-years baseline at every lead. For 1982–2025, the Oct-1 ONI correlates −0.01 with the November runnable share and −0.01 with Jan–Mar. After accounting for baseflow, the partial correlation is +0.04. November runnable share was 81% / 60% / 68% for La Niña / neutral / El Niño on Oct 1, with n = 5 / 31 / 8: noise. ENSO mainly moves cool-season rain, while this reach runs on the summer monsoon and managed releases.
 - **Monsoon rainfall (CHIRPS)**: −0.05 to −0.07 vs baseline, except a small, scheme-dependent gain at 90–120 d leads. The raw signal is real: November was runnable 54% / 60% / 76% after dry / middle / wet 4-month rainfall terciles, and rainfall correlates +0.22 with November and +0.31 with Jan–Mar. But it correlates +0.42 with Oct-1 baseflow. The partial correlation after baseflow is +0.02 for November and +0.17 for Jan–Mar. The river's baseflow already encodes the monsoon, and the extra input mostly adds variance. The Jan–Mar partial (+0.17) is the one thread worth pulling for long-lead winter forecasts, perhaps with a lead-specific or seasonal model.
@@ -227,6 +242,7 @@ The recalibrated skill is scored by leaving out one year from the *recalibration
 - **Climatology:** runnable share by start date for the last 20 years vs all years since 1936, and a canvas grid of every year × start date (newest at top) colored ideal / workable / too low / too high / no data. The 2016 trip is outlined.
 - **Monthly table:** the share of years with ≥1 runnable start in each month, for all years and the last 20.
 - **Validation tables** read from `data/validation.json`, with toggles for range, scheme and season. The row in use is highlighted.
+- **Forecast horizon:** 180 days. The chart fades beyond 150 d (beyond 90 d for the 300–1,000 range), and "best start dates" searches the first 150 d.
 - **URL hash state:** `#asof=YYYY-MM-DD&len=7&lo=200&hi=1200[&model=KEY][&recal=0]`. A past as-of date gives a true hindcast (that year is held out) with an "actual outcome" strip.
 
 ### 5.8 Readings as of 2026-09-30
@@ -316,6 +332,7 @@ All of these were tested from a scripted client.
 
 *(ENSO and monsoon rainfall were tested on 2026-09-30: no gain; see §5.6.)*
 
+0. **Longer horizons.** 180 d is the practical limit with river-only information (calibrated fall skill ≈ +0.04). Anything further out would need a forecast of managed releases (treaty-year deadlines, irrigation allocations) or of next summer's monsoon; neither has shown skill here.
 1. **Seasonal model for winter leads.** Monsoon rainfall keeps a +0.17 partial correlation with Jan–Mar runnability after baseflow. A lead- or season-specific model (e.g. rain enters only for targets in Dec–Mar) might capture that without hurting fall.
 2. **A real basin boundary.** Replace the hand-drawn Conchos polygon with HydroSHEDS / CONAGUA, and consider upper-basin-only rainfall (above La Boquilla).
 3. **Forward-chained recalibration.** Fit the Platt correction for year *y* only on years < *y*, to remove the residual optimism noted in §5.5. This needs forward forecasts before 2008 (e.g. evaluate 1990–2025).

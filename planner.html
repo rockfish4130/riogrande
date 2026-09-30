@@ -228,6 +228,7 @@ summary{cursor:pointer;color:var(--ink2)}
       <li><b>Predictor.</b> The lowest daily mean in the last week is a proxy for <i>baseflow</i>: the water still in the river after storm spikes pass (mostly Rio Conchos water). It's log-transformed because flows run from 0 to about 50,000 cfs, and zeros are floored at 1.</li>
       <li><b>Shape.</b> The quadratic term lets the odds fall off on both sides (nearly dry or in flood). It has full weight up to a 30-day lead, then blends linearly into a linear-in-<i>x</i> model by 60 days. The quadratic version overfit at long leads.</li>
       <li><b>Training sample.</b> For as-of date <i>d</i> and lead <i>k</i>, every training year contributes (x on day d′, outcome of the trip starting on d′+k) for d′ within ±10 days of the same calendar date, every 2 days. That's about 11 pairs per year and ~1,000 per fit, but they're heavily autocorrelated. <b>The effective sample size is about the number of years.</b></li>
+      <li><b>Regime memory for long leads.</b> Beyond 60 days, a second predictor joins: log₁₀ of the <b>365-day mean flow</b>, which says whether the river has been in a wet or dry regime over the past year. Droughts and wet spells here last years, and last week's baseflow can't see that. The default is a composite: the baseflow-only model up to a 60-day lead, blended linearly into the baseflow + 365-day model by 90 days.</li>
       <li><b>Recency weighting.</b> Each training year gets weight 0.5<sup>|Δyears| / 12</sup>, a <b>12-year half-life</b>. The river has changed a lot: for November trips, the runnable share by decade was 1960s 83%, 1990s 92%, 2000s 54%, 2010s 61%, and 2020s so far 28%. Giving 1936 the same vote as 2024 makes long-lead forecasts <i>worse</i> than using recent years alone. Weighting keeps the long record's sample size without letting the old regime dominate.</li>
       <li><b>Fit.</b> Features are standardized, a ridge penalty (λ = 1) is applied to the slopes, and the fit uses Newton–Raphson.</li>
       <li><b>Calibration correction (on by default).</b> Validation showed every candidate model forecasting <i>too high</i> in the middle range. Forecasts of about 40% came true only about 23–27% of the time in 2008–2025, because recent years were drier than even the weighted training set. The fix is <b>Platt scaling</b>: p′ = σ(a + b·logit p), with (a, b) fit per lead time on the forward-chained validation forecasts and interpolated between leads. Scored honestly (the correction for each year is fit on the other years), it brings calibration close to exact and raises skill at every lead, most at long leads. Caveat: the correction learns from 2008–2025 as a whole, so if the river's regime shifts again it will lag.</li>
@@ -236,7 +237,7 @@ summary{cursor:pointer;color:var(--ink2)}
     </ul>
 
     <h3>5. How the design was chosen (including what didn't work)</h3>
-    <p>Seventeen candidate specs were compared (the full table is above). They vary three things: <b>which inputs</b> (baseflow; plus Presidio 3-day mean flow; La Boquilla storage; El Niño; Conchos basin rainfall), <b>which years</b> (2007+, 1936+, 1950+, 1982+, 1993+), and <b>recency half-life</b> (none, 25, 12, 8 or 5 years). Every added input gets a baseline trained on the same years, so the comparison is fair. The rule was set in advance: the score is mean forward-chained Brier skill for leads of 3–60 days, 200–1,200 cfs, issued Aug–Nov, and a challenger has to beat the current default by more than 0.02 to replace it.</p>
+    <p>Nineteen candidate specs were compared (the full table is above). They vary three things: <b>which inputs</b> (baseflow; plus Presidio 3-day mean flow; La Boquilla storage; El Niño; Conchos basin rainfall; 365-day mean flow), <b>which years</b> (2007+, 1936+, 1950+, 1982+, 1993+), and <b>recency half-life</b> (none, 25, 12, 8 or 5 years). Every added input gets a baseline trained on the same years, so the comparison is fair. The rule was set in advance: the score is mean forward-chained Brier skill for leads of 3–60 days, 200–1,200 cfs, issued Aug–Nov, and a challenger has to beat the current default by more than 0.02 to replace it.</p>
     <ul>
       <li><b>Long record plus a 12-year half-life</b> won (≈ +0.32 on that metric). Half-lives of 8–25 years were within noise of it. With no weighting, skill went negative beyond 90 days.</li>
       <li><b>v1's design</b> (only the Castolon-era years, 2007+) scored ≈ +0.13 under forward chaining. It looked fine in leave-one-year-out, because there it's allowed to learn from future years.</li>
@@ -244,6 +245,7 @@ summary{cursor:pointer;color:var(--ink2)}
       <li><b>La Boquilla storage</b> made things slightly <i>worse</i>. It's only available since 1993, so the model loses 57 years of training, and on its own it's a weak signal (Oct-1 storage terciles gave 46% / 58% / 78% November runnable). Most of its information seems to already be in current baseflow.</li>
       <li><b>El Niño / La Niña (ONI)</b> made things slightly worse (about −0.01 to −0.03 against a baseline trained on the same 1950+ years). The raw relationship is essentially zero: across 1982–2025, the Oct-1 ONI correlates −0.01 with the share of runnable November weeks, and −0.01 with January–March. ENSO mostly moves cool-season rain, but this river's fall and winter water comes from the summer monsoon and managed releases.</li>
       <li><b>Monsoon rainfall</b> (CHIRPS, a Conchos-basin 4-month anomaly) made things worse (about −0.05 to −0.07 against a same-years baseline), with a small, inconsistent gain only at 90–120 day leads. The raw signal is real: November was runnable 54% of the time after dry monsoons and 76% after wet ones. But rainfall correlates +0.42 with Oct-1 baseflow, and once baseflow is known, the leftover correlation with November is +0.02 (+0.17 for Jan–Mar). In other words, the river has already told you how wet the monsoon was.</li>
+      <li><b>Regime memory (365-day mean flow)</b> passed a separate long-lead rule, also set in advance: it had to beat the baseflow-only model by more than 0.02 in mean forward fall skill over 90–180 day leads. Raw skill went from +0.006 to +0.08; after calibration, fall skill is about +0.22 at 90 days, +0.23 at 120–150, and +0.04 at 180. The shorter 90-day memory didn't help, and 730 days was no better than 365. At short leads it's used only from 60 days on, since there it adds nothing. A 5-year half-life also did well at long leads (+0.11) but worse at short leads, so it wasn't adopted.</li>
       <li>The negative results are reported on purpose. Adding inputs that don't help is the most common way these models fool their authors.</li>
     </ul>
 
@@ -259,7 +261,8 @@ summary{cursor:pointer;color:var(--ink2)}
     <ul>
       <li><b>Up to about 2 weeks out:</b> clearly better than the calendar (forward-chained skill ≈ +0.4, or ≈ +0.35 for fall forecasts).</li>
       <li><b>1–2 months out:</b> moderate skill (≈ +0.2 to +0.3). It reliably separates "basically dry" years from "real baseflow" years.</li>
-      <li><b>3–4 months out:</b> small but real skill once calibrated (≈ +0.1 to +0.2). The chart fades that range to remind you. For long-range planning, also use the "usually good weeks" view and watch the recent-20-years line.</li>
+      <li><b>3–5 months out:</b> real but modest skill for the workable range (fall forecasts ≈ +0.2), mostly from knowing whether the past year was wet or dry. It gives no useful skill for the narrower 300–1,000 "ideal" range beyond about 3 months.</li>
+      <li><b>6 months out:</b> essentially none (≈ +0.04), and the chart fades that range. Nothing tested predicts managed reservoir releases or next summer's monsoon that far ahead. For long-range planning, use the "usually good weeks" view and the recent-20-years line.</li>
       <li>Flexibility beats precision. The monthly table shows how often <i>some</i> start date worked.</li>
     </ul>
   </div>
@@ -335,23 +338,24 @@ $('latest').onclick=()=>{st.asof=LAST;update(true)};
 document.querySelectorAll('#preset button').forEach(b=>b.onclick=()=>{st.lo=+b.dataset.lo;st.hi=+b.dataset.hi;update(false)});
 
 // ---------- forecast chart ----------
-const HORIZON=150;
+const HORIZON=180,SKILL_END=150;
 function drawForecast(){
   const svg=$('fc');svg.innerHTML='';
   const W=1000,H=380,m={l:44,r:16,t:14,b:58};const pw=W-m.l-m.r,ph=H-m.t-m.b-22;
   const tab=recalTable();
   const pts=[];for(let k=1;k<=HORIZON;k++){const f=M.forecast(D,st.spec,st.asof,k,st.lo,st.hi,st.len);if(tab)f.raw=f.p,f.p=M.recalibrate(f.p,k,tab);pts.push({k,t:st.asof+k,...f,act:M.classify(D.T,st.asof+k,st.lo,st.hi,st.len)})}
   const x=k=>m.l+(k-1)/(HORIZON-1)*pw, y=p=>m.t+ph-p*ph;
-  el(svg,'rect',{x:x(91),y:m.t,width:x(HORIZON)-x(91),height:ph,fill:'var(--grid)','fill-opacity':.5});
-  const lz=el(svg,'text',{x:x(91)+6,y:m.t+14,class:'alabel'});lz.textContent='3+ months out: little skill beyond the calendar';
+  const fadeFrom=(st.lo===300&&st.hi===1000)?91:SKILL_END+1;
+  el(svg,'rect',{x:x(fadeFrom),y:m.t,width:x(HORIZON)-x(fadeFrom),height:ph,fill:'var(--grid)','fill-opacity':.5});
+  const lz=el(svg,'text',{x:x(fadeFrom)+6,y:m.t+14,class:'alabel'});lz.textContent=fadeFrom===91?'3+ months: no skill for the 300–1,000 range':'5+ months: ≈ no skill';
   [0,.25,.5,.75,1].forEach(v=>{el(svg,'line',{x1:m.l,x2:m.l+pw,y1:y(v),y2:y(v),stroke:'var(--grid)'});const t=el(svg,'text',{x:m.l-6,y:y(v)+4,'text-anchor':'end',class:'tick'});t.textContent=pct(v)});
   for(let k=1;k<=HORIZON;k++){const d=M.toDate(st.asof+k);if(d.getUTCDate()===1){el(svg,'line',{x1:x(k),x2:x(k),y1:m.t,y2:m.t+ph,stroke:'var(--grid)'});const t=el(svg,'text',{x:x(k)+4,y:m.t+ph+14,class:'tick'});t.textContent=MN[d.getUTCMonth()]+(d.getUTCMonth()===0?' '+d.getUTCFullYear():'')}}
   const ax=el(svg,'text',{x:m.l,y:H-4,class:'tick'});ax.textContent='Trip start date → (lead time from '+fmtDY(st.asof)+')';
   el(svg,'polyline',{points:pts.filter(p=>p.base!=null).map(p=>x(p.k)+','+y(p.base)).join(' '),fill:'none',stroke:'var(--clim)','stroke-width':1.5,'stroke-dasharray':'5 4'});
   const mp=pts.filter(p=>p.p!==null);
   if(mp.length){
-    el(svg,'polyline',{points:mp.filter(p=>p.k<=91).map(p=>x(p.k)+','+y(p.p)).join(' '),fill:'none',stroke:'var(--model)','stroke-width':2.5,'stroke-linejoin':'round'});
-    el(svg,'polyline',{points:mp.filter(p=>p.k>=91).map(p=>x(p.k)+','+y(p.p)).join(' '),fill:'none',stroke:'var(--model)','stroke-width':2,'stroke-opacity':.45,'stroke-linejoin':'round'});
+    el(svg,'polyline',{points:mp.filter(p=>p.k<=fadeFrom).map(p=>x(p.k)+','+y(p.p)).join(' '),fill:'none',stroke:'var(--model)','stroke-width':2.5,'stroke-linejoin':'round'});
+    el(svg,'polyline',{points:mp.filter(p=>p.k>=fadeFrom).map(p=>x(p.k)+','+y(p.p)).join(' '),fill:'none',stroke:'var(--model)','stroke-width':2,'stroke-opacity':.45,'stroke-linejoin':'round'});
   }
   const sy=m.t+ph+22;const hasAct=pts.some(p=>p.act);
   if(hasAct){const cw=pw/(HORIZON-1);pts.forEach(p=>{if(p.act)el(svg,'rect',{x:x(p.k)-cw/2,y:sy,width:cw+.5,height:10,fill:`var(--${p.act})`})});
@@ -378,13 +382,13 @@ function headline(pts){
   const yr=M.yearOf(st.asof);
   const bf=d=>{const x=M.xBase(D.T,d);return x==null?null:Math.pow(10,x)};
   const all=pctRank(bf,st.asof,D.years,yr), rec=pctRank(bf,st.asof,D.years.filter(y=>y>=yr-20&&y<yr),yr);
-  const cand=pts.filter(p=>p.k<=90&&p.p!==null).sort((a,b)=>b.p-a.p);const best=[];
+  const cand=pts.filter(p=>p.k<=SKILL_END&&p.p!==null).sort((a,b)=>b.p-a.p);const best=[];
   for(const c of cand){if(best.every(b=>Math.abs(b.t-c.t)>=7))best.push(c);if(best.length===3)break}
   const near=pts.filter(p=>p.k<=30&&p.p!==null).map(p=>p.p);const nearMax=near.length?Math.max(...near):null;
   const tiles=[
     ['Baseflow now (Johnson Ranch)',all?cfs(all.x)+' cfs':'—',all?`Lowest daily mean in the 7 days to ${fmtD(st.asof)}. ${rankTxt(all,'years on this date')}${rec&&rec.n&&all.below>0?` Of the previous 20 years, higher than ${rec.below}.`:''}`:''],
     ['Best chance, next 30 days',pct(nearMax),`For a ${st.len}-day trip that stays within ${st.lo.toLocaleString()}–${st.hi.toLocaleString()} cfs every day.`],
-    ['Best start dates, next 90 days',best.length?best.map(b=>fmtD(b.t)).join(' · '):'—',best.length?best.map(b=>pct(b.p)).join(' · ')+' (7+ days apart)':''],
+    ['Best start dates, next 150 days',best.length?best.map(b=>fmtD(b.t)).join(' · '):'—',best.length?best.map(b=>pct(b.p)).join(' · ')+' (7+ days apart)':''],
   ];
   let h=tiles.map(([k,v,d])=>`<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
   const ext=pts.find(p=>p.k===30)?.extrap;
