@@ -3,35 +3,35 @@
   "name": "Rio Grande at Johnson Ranch nr Castolon, TX (IBWC 08375000)",
   "unit": "cfs",
   "start": "1936-04-01",
-  "end": "2026-11-05",
-  "days": 33090
+  "end": "2026-11-06",
+  "days": 33091
  },
  "presidio": {
   "name": "Rio Grande below Rio Conchos nr Presidio, TX (IBWC 08374200)",
   "unit": "cfs",
   "start": "1900-05-01",
-  "end": "2026-11-05",
-  "days": 40081
+  "end": "2026-11-06",
+  "days": 40082
  },
  "conchos_ojinaga": {
   "name": "Rio Conchos nr Ojinaga, Chih. (IBWC 08373000)",
   "unit": "cfs",
   "start": "1954-04-01",
-  "end": "2026-11-05",
-  "days": 26475
+  "end": "2026-11-06",
+  "days": 26476
  },
  "terlingua": {
   "name": "Terlingua Creek nr Terlingua, TX (IBWC 08374500)",
   "unit": "cfs",
   "start": "1932-01-01",
-  "end": "2026-11-05",
-  "days": 34639
+  "end": "2026-11-06",
+  "days": 34640
  },
  "la_boquilla": {
   "name": "La Boquilla Reservoir storage, Rio Conchos (CONAGUA via IBWC)",
   "unit": "million m3",
   "start": "1993-01-01",
-  "end": "2026-11-06",
-  "days": 12248
+  "end": "2026-11-07",
+  "days": 12249
  }
 }
